@@ -22,7 +22,7 @@ Queue job `20261121_011055_94541a` ran F-1 to F-7a in one chain (`build.bat Anim
 | F-9 | `smoke_game.bat` argument handling (no UE started) | `smoke_game.bat bogus -foo`; `smoke_game.bat packaged` before any package existed | ✅ Unknown mode → exit 2 with a message; missing packaged build → exit 3 with a message |
 | F-10 | Documentation audit before the Phase 1–4 commit | `python -I tools\check_links.py P06_AnimEventClock`; a grep of the folder for the banned words and personal paths | ✅ 72 relative links checked, **0 problems**; **0** banned-word matches; every `File:line` citation in 01b, 02 and the raw notes was opened in the 5.8.4 source while writing |
 
-### Phase 4 re-run (F-11), after two configuration fixes
+### Phase 4 re-run (F-11), after two configuration fixes ✅
 
 Two fixes were made after the first job, and both need a full rebuild (a plugin change alters what the monolithic game links):
 1. `ServerDefaultMap=/Engine/Maps/Templates/Template_Default` in `DefaultEngine.ini` (F-7a).
@@ -30,7 +30,7 @@ Two fixes were made after the first job, and both need a full rebuild (a plugin 
 
 | # | Check | Command | Result |
 |---|---|---|---|
-| F-11 | Editor + game builds, package, packaged smoke, dedicated-server smoke, all again; `DefaultEngine.ini` unchanged afterwards; the server opens `Template_Default` | The same chain as the first job, queued as one job | *(pending: queue job running at the time of writing)* |
+| F-11 | Editor + game builds, package, packaged smoke, dedicated-server smoke, all again; `DefaultEngine.ini` unchanged afterwards; the server opens `Template_Default` | The same chain as the first job, queue job `20261121_015010_b62c2f` | ✅ **Exit 0 in 105.3 s.** Editor target succeeded in 11.8 s and game target in 21.1 s (incremental: the plugin change re-links), both **0 errors, 0 warnings**. Package: BUILD SUCCESSFUL, BuildCookRun 58.9 s, 533 packages cooked (2 fewer than before, the disabled plugin's), cook **"Success - 0 error(s), 0 warning(s)"**; all 9 tutorial packages still in `ReferencedSet.txt`. Packaged smoke: exit 0, `Template_Default` loaded, **0 errors, 0 warnings**. Dedicated server: exit 0, **`LoadMap: /Engine/Maps/Templates/Template_Default`**, `IpNetDriver listening on port 7777`, `max tick rate 30`, game and plugin runtime modules loaded, editor modules not loaded, 0 errors, 21 warnings all `LogEditorDataStorageUI` (engine-side, as in F-7a). No `AndroidFileServer` plugin mounted. `git status` after the job: **no file changed**, so `DefaultEngine.ini` stayed free of the token block |
 
 **What F-7a taught us:** a project that will run dedicated servers must set **all three** default maps. Without the fix, the first networked run would have connected clients to an empty `Entry` map, and the failure would have looked like a harness bug. Found in Phase 4, before any network code exists, and fixed with one config line.
 

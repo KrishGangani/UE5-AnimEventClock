@@ -115,7 +115,7 @@
 3. **How it works.** `UGameMapsSettings::GetGameDefaultMap` returns `IsRunningDedicatedServer() ? ServerDefaultMap : GameDefaultMap` (`Source/Runtime/EngineSettings/Private/EngineSettingsModule.cpp:92–108`); the editor opens `EditorStartupMap`. So **a dedicated server opens `ServerDefaultMap`**, whose engine default is `/Engine/Maps/Entry` (`Config/BaseEngine.ini:16`), an empty map.
 4. **When to use it.** Always set all three in a project that runs dedicated servers.
 5. **When not to.** A map given on the command line (`UnrealEditor-Cmd.exe Project.uproject /Game/Map -server`) overrides them.
-6. **Common mistakes.** Setting only `GameDefaultMap`: the server then sits in `Entry` and clients that connect are sent to an empty world. **This project made exactly this mistake** in its first Phase 4 job (F-7a) and fixed it (F-7b).
+6. **Common mistakes.** Setting only `GameDefaultMap`: the server then sits in `Entry` and clients that connect are sent to an empty world. **This project made exactly this mistake** in its first Phase 4 job (F-7a) and fixed it (F-11).
 7. **Example.** `ServerDefaultMap=/Engine/Maps/Templates/Template_Default`
 8. **In this project.** All three point at `/Engine/Maps/Templates/Template_Default`, a shipped map with a floor and lights.
 
