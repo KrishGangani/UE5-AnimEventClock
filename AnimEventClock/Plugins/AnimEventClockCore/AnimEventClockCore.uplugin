@@ -1,0 +1,30 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Anim Event Clock Core",
+	"Description": "Fires gameplay events authored in animation montages on the gameplay clock, exactly once per role, independent of animation update rate, visibility and network role.",
+	"Category": "Animation",
+	"CreatedBy": "",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "AnimEventClockCore",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "AnimEventClockCoreEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
