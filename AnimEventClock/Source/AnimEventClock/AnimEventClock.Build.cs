@@ -9,7 +9,11 @@ public class AnimEventClock : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		// Phase 4: only the three modules every gameplay module needs. Each later step adds the modules its code uses.
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine" });
+		// Each step adds the modules its code uses, no earlier.
+		// AnimEventClockCore is public: AECBenchSubsystem.h (a public header) uses its EAECEventPhase.
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "AnimEventClockCore" });
+
+		// AnimationBudgetAllocator is private: only .cpp files use USkeletalMeshComponentBudgeted (budget conditions).
+		PrivateDependencyModuleNames.AddRange(new string[] { "AnimationBudgetAllocator" });
 	}
 }

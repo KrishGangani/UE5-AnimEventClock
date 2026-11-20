@@ -67,7 +67,7 @@
 
 | Fact | Source |
 |---|---|
-| `AGameStateBase::GetServerWorldTimeSeconds()` = local world time + `ServerWorldTimeSecondsDelta` (a `float`) | `Private/GameStateBase.cpp:144–150`; `Classes/GameFramework/GameStateBase.h:155` |
+| `AGameStateBase::GetServerWorldTimeSeconds()` = local world time + `ServerWorldTimeSecondsDelta` (a `float`) | `Private/GameStateBase.cpp:144–152`; `Classes/GameFramework/GameStateBase.h:155` |
 | The server replicates its world time every 0.1 s (`ServerWorldTimeSecondsUpdateFrequency`); the client sets the delta to `ReplicatedTime − LocalTime` **on receipt**, averages it (reset after 250 samples) and moves halfway towards the average each update. There is **no** round-trip or one-way-delay compensation | `GameStateBase.cpp:36, 65–67, 155–161, 164–193` |
 
 **[inferred] Consequence.** On a client, `GetServerWorldTimeSeconds()` lags true server time by about the one-way delay. A client that schedules "server start + authored offset" with it fires events late by that delay, the same as starting the montage on receipt. A latency-compensated estimate needs a round-trip measurement, for example Cristian's method: the client sends its time `t0`, the server replies with its time `ts`, the client receives at `t1` and estimates `ServerNow ≈ ts + (t1 − t0)/2` at `t1` (F. Cristian, "Probabilistic clock synchronization", *Distributed Computing* 3, 1989, https://doi.org/10.1007/BF01784024). Keeping the sample with the smallest round trip bounds the error by half that round trip.

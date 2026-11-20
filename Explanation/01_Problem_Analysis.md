@@ -76,10 +76,10 @@ When this is ignored, teams typically:
 - **Map:** the engine's `Template_Default` (no authored map). Characters are spawned by code from a **fixed seed**.
 - **Characters:** N NPCs of a demo `ACharacter` (the engine's tutorial mannequin, `01b #13`), split into three bands: near and visible, far and visible (small on screen), and behind the camera (not rendered). Single-process runs: N = 64 (timing), 64 / 256 (overhead). Network runs: 16 NPCs plus one possessed character per client.
 - **Actions:** each character loops "wait a seeded 0.5–1.5 s, then play one action". Actions are generated montages (by an editor commandlet, from the tutorial idle sequence):
-  - `Attack`: about 2 s, 4 instant events and 1 window (begin + end).
-  - `Combo`: 3 sections with a section jump made by the harness, and one looped section.
+  - `Attack`: one section, 4 instant events and 1 window (begin + end).
+  - `Combo`: 3 linked sections (A → B → C) played straight through, 4 instant events and 1 window that crosses a section boundary. Section jumps and loops are exercised by the S5 unit tests and the S6 runs, not by the baselines: their expected times need the same section-walking logic as the clock, and the baselines must not depend on it.
   - Play rate 1.0 or 1.3 (seeded); 10% of actions are interrupted at a seeded time.
-- **Volume:** one action cycle is about 3 s (1 s wait + 2 s action), so a 60 s capture gives about 64 × 20 actions × 6 events ≈ 7,700 events per single-process run, enough for p99 and per-1,000 rates.
+- **Volume:** the montages take the engine sequence's length, **6.27 s** (found in S1), so one cycle is about 6.5 s (1 s wait + 4.8–6.3 s action) and a 60 s capture gives about 64 × 9 actions × 6 events ≈ 3,500 events per run; two runs per combination give about 7,000, enough for p99 and per-1,000 rates.
 - **Control row:** engine defaults (no URO, no budget, `AlwaysTickPose`), which should already be within one frame (E1).
 
 ### 6.2 Compared configurations
