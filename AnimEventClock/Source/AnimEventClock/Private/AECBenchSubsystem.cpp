@@ -15,6 +15,7 @@
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformTime.h"
+#include "IAnimationBudgetAllocator.h"
 #include "Misc/App.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Crc.h"
@@ -194,13 +195,32 @@ bool UAECBenchSubsystem::PrepareCondition()
 		bRootMotionFromEverything = (Condition == TEXT("la4"));   // look-ahead mode needs it (SkinnedMeshComponent.cpp:360)
 		return SetConsoleVariable(TEXT("a.URO.ForceAnimRate"), Condition == TEXT("uro2") ? 2 : 4);
 	}
+	if (Condition == TEXT("rme"))
+	{
+		bRootMotionFromEverything = true;   // la4's root-motion mode without URO, to tell the two causes apart (S3)
+		return true;
+	}
 	if (Condition == TEXT("aba2") || Condition == TEXT("aba4"))
 	{
-		// Enabled before any budgeted mesh exists, as the cvar's help asks; then a forced rate for exact, repeatable runs.
+		// The allocator works only with both switches on: the global cvar (default 0, AnimationBudgetAllocatorCVars.cpp:7)
+		// and this world's allocator, which starts disabled (AnimationBudgetAllocator.cpp:71; both tested at :1191, :1366). The
+		// cvars alone change nothing: S3's first batch gave the aba runs the same fire hash as def. Both are switched on
+		// before any budgeted mesh exists, as the cvar's help asks; then a forced rate for exact, repeatable runs.
+		IAnimationBudgetAllocator* Allocator = IAnimationBudgetAllocator::Get(GetWorld());
+		if (!Allocator)
+		{
+			UE_LOG(LogAECBench, Error, TEXT("No animation budget allocator for this world."));
+			return false;
+		}
 		bRegisterWithBudget = true;
-		return SetConsoleVariable(TEXT("a.Budget.Enabled"), 1)
-			&& SetConsoleVariable(TEXT("a.Budget.Debug.Force"), 1)
-			&& SetConsoleVariable(TEXT("a.Budget.Debug.Force.Rate"), Condition == TEXT("aba2") ? 2 : 4);
+		if (!SetConsoleVariable(TEXT("a.Budget.Enabled"), 1)
+			|| !SetConsoleVariable(TEXT("a.Budget.Debug.Force"), 1)
+			|| !SetConsoleVariable(TEXT("a.Budget.Debug.Force.Rate"), Condition == TEXT("aba2") ? 2 : 4))
+		{
+			return false;
+		}
+		Allocator->SetEnabled(true);   // after the cvar: enabling reads it (AnimationBudgetAllocator.cpp:1328-1332, 1363-1366)
+		return true;
 	}
 	if (Condition == TEXT("vis"))
 	{

@@ -19,7 +19,12 @@ What one batch does:
      where <batch> = YYYY-MM-DD_HHMMSS[_label]. Existing files are never overwritten. The manifest is rewritten after every
      run, so a crash loses nothing.
   6. Writes Benchmarks/Summaries/<batch>_summary.md: per combination and path, the median across runs of each run's statistic
-     [min-max across runs], missed / duplicates per 1,000, and whether repeated runs gave the same fire hash.
+     [min-max across runs], missed / duplicates per 1,000, and whether repeated runs gave the same fire hash; then the
+     problem gate (01 §6.4) per combination, path and event class; and a warning for any condition whose fire hash equals
+     the default condition's (a condition that changed nothing, as the budget conditions did before the S3 fix).
+
+    python -I -u run_bench.py --summarize <batch>    rewrites only that batch's summary from its raw files and manifest,
+                                                     with the current event_stats.py (the raw files are never touched)
 
 Every run: fixed step (-deterministic -FPS=<fps>), real GPU at 1280x720 windowed, no VSync, no sound, -traceautostart=0.
 """
@@ -44,14 +49,15 @@ PROJECT_DIR = os.path.dirname(TOOLS_DIR)
 BUILD_DIR = os.path.join(PROJECT_DIR, "Build", "Windows")
 EXE = os.path.join(BUILD_DIR, "AnimEventClock", "Binaries", "Win64", "AnimEventClock.exe")   # the real game, not the bootstrap
 SAVED = os.path.join(BUILD_DIR, "AnimEventClock", "Saved")
-RAW_DIR = os.path.join(PROJECT_DIR, "Benchmarks", "Raw")
+RAW_DIR = event_stats.RAW_DIR
 SUMMARY_DIR = os.path.join(PROJECT_DIR, "Benchmarks", "Summaries")
 ENGINE_BUILD_VERSION = r"C:\Program Files\Epic Games\UE_5.8\Engine\Build\Build.version"
 STARTUP_MARGIN_SECONDS = 180.0
 RUN_FILES = ("actions", "expected", "events")
 
 CONFIGS = ("NQ", "NB")
-CONDITIONS = ("def", "uro", "uro2", "uro4", "la4", "aba2", "aba4", "vis")
+CONDITIONS = ("def", "uro", "uro2", "uro4", "la4", "rme", "aba2", "aba4", "vis")
+GATE_TOLERANCE_FRAMES = 1e-3   # the CSV files store times to 1 microsecond
 
 
 def powershell(command: str) -> str:
@@ -159,6 +165,37 @@ def cell(values: list[float], digits: int = 2) -> str:
     return f"{statistics.median(values):.{digits}f} [{min(values):.{digits}f}-{max(values):.{digits}f}]"
 
 
+def gate_lines(groups: dict[tuple, list[dict]]) -> list[str]:
+    """The problem gate (01 §6.4): a real problem if p99 |error| > 1 frame, or any missed or duplicate event. Judged on
+    "instant+begin" and "end" separately (event_stats buckets); median across runs of each run's abs p99. Plus a warning
+    for every condition whose fire hash equals the default condition's at the same frame rate and config."""
+    lines = ["## Problem gate (01 §6.4)", "",
+             "p99 of |error| in frames (median across runs [min-max]); missed and duplicates summed over the runs.", "",
+             "| Cond | FPS | Config | Path | Events | Runs | p99 abs error (frames) | min (frames) | max (frames) | Missed | Dup | Gate |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for (cond, fps, config), group in sorted(groups.items()):
+        if event_stats.frame_ms_of(group[0]["stats"]["run"]) is None:
+            continue   # no fixed step: no frame length to judge in
+        for path in sorted({p for g in group for p in g["stats"]["paths"]}):
+            for events in ("instant+begin", "end"):
+                stats = [g["stats"]["paths"][path][events] for g in group if events in g["stats"]["paths"].get(path, {})]
+                if not stats:
+                    continue
+                errors = [s["error_ms"] for s in stats if s["error_ms"]["count"]]
+                p99 = [e["abs_p99_frames"] for e in errors]
+                missed, duplicates = sum(s["missed"] for s in stats), sum(s["duplicates"] for s in stats)
+                problem = (bool(p99) and statistics.median(p99) > 1.0 + GATE_TOLERANCE_FRAMES) or missed or duplicates
+                lines.append(f"| {cond} | {fps} | {config} | {path} | {events} | {len(stats)} | {cell(p99)} | "
+                             f"{cell([e['min_frames'] for e in errors])} | {cell([e['max_frames'] for e in errors])} | {missed} | {duplicates} | "
+                             f"{'**problem**' if problem else 'pass'} |")
+    default_hashes = {(fps, config): {g["stats"]["run"].get("hash") for g in group} for (cond, fps, config), group in groups.items() if cond == "def"}
+    for (cond, fps, config), group in sorted(groups.items()):
+        hashes = {g["stats"]["run"].get("hash") for g in group}
+        if cond != "def" and hashes == default_hashes.get((fps, config)):
+            lines += ["", f"**WARNING: `{cond}` gave the default condition's fire hash at {fps} fps, {config}: it changed nothing.**"]
+    return lines
+
+
 def write_summary(batch: str, environment: dict, records: list[dict]) -> str:
     os.makedirs(SUMMARY_DIR, exist_ok=True)
     groups: dict[tuple, list[dict]] = {}
@@ -181,8 +218,9 @@ def write_summary(batch: str, environment: dict, records: list[dict]) -> str:
                          + " | ".join(cell([e[k] for e in errors]) for k in ("median", "p95", "p99", "min", "max"))
                          + f" | {cell([s['missed_per_1000'] for s in stats], 1)} | {cell([s['duplicates_per_1000'] for s in stats], 1)}"
                          + f" | {cell([s['bunched_share'] for s in stats], 3)} | {'yes' if len(hashes) == 1 else 'NO'} |")
-    lines += ["", "Per-band numbers (0 near, 1 far, 2 behind the camera) are in each run's `stats` in the manifest.", "",
-              f"Raw files: `Benchmarks/Raw/{batch}_*` (three CSV files and a log per run) and `{batch}_manifest.json`."]
+    lines += ["", "Per-band numbers (0 near, 1 far, 2 behind the camera) are in each run's `stats` in the manifest.", ""]
+    lines += gate_lines(groups)
+    lines += ["", f"Raw files: `Benchmarks/Raw/{batch}_*` (three CSV files and a log per run) and `{batch}_manifest.json`."]
     path = os.path.join(SUMMARY_DIR, batch + "_summary.md")
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
@@ -204,7 +242,17 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--label", default="")
     parser.add_argument("--no-prime", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--summarize", metavar="BATCH", help="only rewrite BATCH's summary from its raw files and manifest")
     args = parser.parse_args(argv)
+
+    if args.summarize:
+        with open(os.path.join(RAW_DIR, args.summarize + "_manifest.json"), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        for record in manifest["runs"]:
+            if "stats" in record:
+                record["stats"] = event_stats.analyse(os.path.join(RAW_DIR, record["name"]))
+        print("summary:", write_summary(args.summarize, manifest["environment"], manifest["runs"]))
+        return 0
 
     configs = [c.strip() for c in args.configs.split(",") if c.strip()]
     conds = [c.strip() for c in args.conds.split(",") if c.strip()]

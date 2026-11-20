@@ -7,6 +7,7 @@
 | A | Phase 4, F1–F4 (foundation) | `.uproject`, two `Target.cs`, four `Build.cs`, four module `.cpp`, `.uplugin`, three config `.ini`, `Tools\*.bat`, `Tools\cpu_affinity.py` |
 | B | S1 (markers + demo assets) | `AECEventTypes`, `AECEventNotify`, `AECEventWindowNotifyState` (plugin); `AECDemoMontages` (game); `AECMakeDemoAssetsCommandlet` (game editor); `AECDemoMontageTests`; `Tools\make_assets.bat`, `run_tests.bat` |
 | C | S2 (workload + harness, baseline paths only) | `AECDemoCharacter`, `AECBenchSubsystem` (game); `Tools\event_stats.py`, `run_bench.py` |
+| D | S3 (the M1 baselines and the gate) | `AECBenchSubsystem` (`PrepareCondition`: `rme`, the budget allocator's second switch); `Tools\event_stats.py` (one shared metric with event-class buckets), `run_bench.py` (the gate, the no-op warning, `--summarize`) |
 
 ---
 
@@ -328,7 +329,7 @@ No event-clock code exists in this step: S2 builds only what the baselines (NQ, 
 
 **`OnWorldBeginPlay`.** Reads the settings; with no characters requested, does nothing (an empty map). Records the begin-play time and **frame** (frame numbers in the files count from here, so loading frames can't change them). Then, in order: the config must be `NQ` or `NB`; `PrepareCondition` sets the condition's console variables **before any character exists** (the budget allocator asks for this); `LoadMontages`; timings must be sane; `SpawnCharacters`. If any step fails, the run doesn't start and the exit code is 3. Then the comparison hook is bound, the camera spawned, and the run enters warm-up.
 
-**`PrepareCondition`.** `def` nothing; `uro` URO on with the engine's own rates; `uro2`/`uro4` URO on plus `a.URO.ForceAnimRate`; `la4` the same at rate 4 plus root motion from everything (look-ahead, `SkinnedMeshComponent.cpp:360`); `aba2`/`aba4` `a.Budget.Enabled 1`, `a.Budget.Debug.Force 1`, `a.Budget.Debug.Force.Rate` (deterministic, Development builds); `vis` `OnlyTickPoseWhenRendered`. Unknown → false. `SetConsoleVariable` sets each value at the temporary priority `ECVF_SetByTemp` with a tag, and `Deinitialize` calls `UnsetAllConsoleVariablesWithTag`, which removes exactly those values, because PIE runs share one process (code-review finding). Restoring the old value by hand would have left it stuck at code priority (simplify finding)
+**`PrepareCondition`.** `def` nothing; `uro` URO on with the engine's own rates; `uro2`/`uro4` URO on plus `a.URO.ForceAnimRate`; `la4` the same at rate 4 plus root motion from everything (look-ahead, `SkinnedMeshComponent.cpp:360`); `rme` root motion from everything **without** URO (added in S3 as the control that separates `la4`'s two switches); `aba2`/`aba4` turn on **both** budget switches, the cvar `a.Budget.Enabled 1` and this world's allocator, `IAnimationBudgetAllocator::Get(GetWorld())->SetEnabled(...)` (it starts disabled, `06` §26; a missing allocator is a setup error), then `a.Budget.Debug.Force 1` and `a.Budget.Debug.Force.Rate` (deterministic, Development builds). `SetEnabled` comes after the cvars, because enabling reads the cvar. S3 found that the cvars alone change nothing (`07` S3); `vis` `OnlyTickPoseWhenRendered`. Unknown → false. `SetConsoleVariable` sets each value at the temporary priority `ECVF_SetByTemp` with a tag, and `Deinitialize` calls `UnsetAllConsoleVariablesWithTag`, which removes exactly those values, because PIE runs share one process (code-review finding). Restoring the old value by hand would have left it stuck at code priority (simplify finding)
 
 **`LoadMontages`.** Loads the two montages of the run's variant by path and reads their keys from `Notifies` with `GetTriggerTime`/`GetEndTriggerTime` (`06` §12), exactly as the event clock will. A montage without markers is a setup error.
 
@@ -360,7 +361,7 @@ A failed write gives exit code 4 (code-review finding).
 
 `AnimEventClock.Build.cs`: `AnimEventClockCore` becomes **public** (`AECBenchSubsystem.h`, a public header, uses `EAECEventPhase`); `AnimationBudgetAllocator` is **private** (only `.cpp` files use `USkeletalMeshComponentBudgeted`).
 
-### C4. `Tools\event_stats.py`
+### C4. `Tools\event_stats.py` (as written in S2; S3 rewrote it around one shared metric, D2)
 
 | Part | What it does, and why |
 |---|---|
@@ -370,6 +371,34 @@ A failed write gives exit code 4 (code-review finding).
 | `collections.Counter` in the bunching count | Counts fires per frame directly (simplify finding) |
 | `selftest()` | A hand-made run with known answers: an on-time and a late fire in one frame (bunched), a duplicate, a miss, an action outside the capture, an interrupted window end |
 
-### C5. `Tools\run_bench.py`
+### C5. `Tools\run_bench.py` (S3 added the gate, the no-op warning and `--summarize`, D3)
 
 Adapted from UE5-UpdateBudget's runner (`05` A13 for the pinning): pins itself once with `pin_self`, records the environment (with `applied_mask()`), runs a priming run, then every condition × frame rate × config, `--runs` times (default: the number of configs), interleaved with the config order rotated each round. Each run launches the **real** packaged executable with `Popen` (`-deterministic -FPS=<n>`, 1280×720 windowed, no VSync, no sound, `-traceautostart=0`, the `-AEC…` switches, `-AECExit`), waits with a timeout and kills the tree in a `finally` block. It moves the three run files and the log into `Benchmarks\Raw\` (`refuse_overwrite` raises rather than overwrite raw data), analyses them with `event_stats.analyse`, rewrites the manifest after every run, and writes a summary table per (condition, fps, config, path) with the median across runs [min–max], missed and duplicates per 1,000, the bunched share, and whether the fire hashes of repeated runs agree. A run fails on a non-zero exit, a timeout, missing run files, a missing log or log errors.
+
+---
+
+## Part D · S3: the M1 baselines and the gate
+
+### D1. `AECBenchSubsystem.cpp`, `PrepareCondition`
+
+Two changes, both described in C3 (`PrepareCondition`): the `rme` control (root motion from everything without URO), and the budget conditions turning on the world's allocator as well as the cvar. The order inside the budget branch: fetch the allocator first (a missing one is a setup error, so the run refuses to start); set the three cvars (any failure → `false`); only then `SetEnabled(true)`, because enabling re-reads `a.Budget.Enabled` (`06` §26). An early `return false` on a failed cvar instead of passing the result into `SetEnabled` (simplify finding): `SetEnabled(false)` on a disabled allocator would do nothing, so the old form only looked as if it handled a case.
+
+### D2. `Tools\event_stats.py`, rewritten around one metric
+
+| Part | What it does, and why |
+|---|---|
+| `summarize` | Adds `abs_p99`, the p99 of the absolute error: the problem gate's number (`01` §6.4). Early and late errors count alike |
+| `load_run(prefix)` | Reads a run's three files once into: the header, the actions in capture (by id), the expected events (due time, phase, interrupted) and the fires per (path, action, key). Every analysis below starts from it |
+| `measure(due, interrupted, group_of, phase_of, fires, paths, frame_ms)` | **The** metric, written once: per path, the first fire's error, misses, duplicates (and how many of them are window begins/ends), unexpected fires, bunching, into buckets: `all`, one per group, `instant+begin`, `end`, `interrupted_end`. `group_of(action, key)` names the group, so the same code gives bands (`analyse`), per-key labels (`keys`) and, in S4, network roles. It used to live inside `analyse`; the first gate script re-implemented it and had already drifted (reuse and altitude findings), so the gate is now two buckets of this function |
+| `paths` argument | `analyse` passes `{config, "T"}`, so a path that fired nothing in a run still gets a row with every event missed, instead of vanishing from the table (code-review finding: the gate exists to catch exactly that run) |
+| `analyse(prefix)` | `load_run` + `measure` with the band as the group. Its output for the old buckets is identical to the S2 version on all 73 runs recorded so far (checked by script before the change was kept) |
+| `keys(prefix, path)` / `--keys` | The per-key diagnostic used to read the URO and look-ahead results: per (montage, key, phase, band, play rate), expected, missed and min / median / max error. A bare run name is looked up in `Benchmarks\Raw` |
+| `selftest()` | The S2 cases, plus `abs_p99`, the `instant+begin` bucket, a path that never fired (T: every event missed), and one `--keys` line |
+
+### D3. `Tools\run_bench.py`
+
+- `RAW_DIR` comes from `event_stats` (one definition of the folder). `CONDITIONS` gains `rme`.
+- `gate_lines(groups)`: the gate table in every batch summary, per (condition, fps, config, path) and event class: the median across runs of each run's `abs_p99_frames` [min–max], min and max in frames, missed and duplicates summed over the runs, and the verdict (**problem** if p99 > 1 frame + 0.001 frame, or anything missed or duplicated; the 0.001 frame covers the CSV files' 1 µs resolution). Runs without a fixed step are skipped (no frame length).
+- The **no-op warning**: any condition whose fire hash equals the default condition's at the same frame rate and config is flagged "it changed nothing". This is the check that found the budget mistake by hand; now every batch makes it (altitude finding).
+- `--summarize <batch>`: re-reads the batch's manifest and raw CSV files, re-analyses every run with the current `event_stats.py` and rewrites only that batch's summary. The raw files and the manifest are never touched (`Benchmarks\README.md`). The S3 summaries were regenerated this way after the gate was added.
+

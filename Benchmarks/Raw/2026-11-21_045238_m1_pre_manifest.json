@@ -1,0 +1,1243 @@
+{
+  "environment": {
+    "date": "2026-11-21T04:52:38",
+    "engine": "5.8.4 (CL 58902052)",
+    "build_config": "Development (packaged)",
+    "compiler": "MSVC 14.44.35229, Windows SDK 10.0.22621.0",
+    "cpu": "Intel(R) Core(TM) i7-14650HX",
+    "gpus": "Intel(R) UHD Graphics (driver 32.0.101.7088); NVIDIA GeForce RTX 5070 Laptop GPU (driver 32.0.16.1047)",
+    "ram_gb": "31.6",
+    "os": "Microsoft Windows 11 Home Single Language build 26200",
+    "power_plan": "Power Scheme GUID: 6fecc5ae-f350-48a5-b669-b472cb895ccf  (Turbo)",
+    "on_ac_power": true,
+    "resolution": "1280x720 windowed, no VSync, no sound",
+    "cpu_affinity": "0xFFFF (performance cores only; hybrid CPU)",
+    "chars": 64,
+    "seed": 1,
+    "warmup": 5.0,
+    "capture": 60.0,
+    "start": "pre"
+  },
+  "runs": [
+    {
+      "name": "2026-11-21_045238_m1_pre_NQ_def_f60_r0_prime",
+      "config": "NQ",
+      "cond": "def",
+      "fps": 60,
+      "run": 0,
+      "priming": true,
+      "exit_code": 0,
+      "wall_seconds": 25.4,
+      "command": "\"D:\\UNREAL PORTFOLIO\\P06_AnimEventClock\\Build\\Windows\\AnimEventClock\\Binaries\\Win64\\AnimEventClock.exe\" -windowed -ResX=1280 -ResY=720 -nosound -unattended -traceautostart=0 -deterministic -FPS=60 -novsync -AECChars=64 -AECSeed=1 -AECWarmup=5.0 -AECCapture=60.0 -AECConfig=NQ -AECCond=def -AECStart=pre -AECRunTag=2026-11-21_045238_m1_pre_NQ_def_f60_r0_prime -AECExit",
+      "run_files": true,
+      "stats": {
+        "run": {
+          "run": "2026-11-21_045238_m1_pre_NQ_def_f60_r0_prime",
+          "config": "NQ",
+          "cond": "def",
+          "start": "pre",
+          "chars": "64",
+          "seed": "1",
+          "warmup": "5.000",
+          "capture": "60.000",
+          "benchstart": "5.000000",
+          "captureend": "65.000000",
+          "fixedstep": "0.016667",
+          "unattributed": "0",
+          "hash": "0x260BDA5F"
+        },
+        "expected": 3501,
+        "interrupted_ends": 23,
+        "actions_in_capture": 606,
+        "paths": {
+          "NQ": {
+            "all": {
+              "expected": 3501,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 3501,
+                "min": -16.154000000000224,
+                "median": -7.334000000000174,
+                "p95": 14.665999999998292,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.44003119937602286,
+                "p95_frames": 0.8799424011518744,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              },
+              "unexpected": 1,
+              "bunched_share": 0.0
+            },
+            "0": {
+              "expected": 1219,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1219,
+                "min": -16.154000000000224,
+                "median": -8.717999999998227,
+                "p95": 14.66599999999847,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.5230695386091214,
+                "p95_frames": 0.879942401151885,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "1": {
+              "expected": 1134,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1134,
+                "min": -16.154000000000224,
+                "median": -7.3330000000026985,
+                "p95": 14.665999999998292,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.43997120057615036,
+                "p95_frames": 0.8799424011518744,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "2": {
+              "expected": 1148,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1148,
+                "min": -16.154000000000224,
+                "median": -7.334000000000174,
+                "p95": 14.665999999998292,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.44003119937602286,
+                "p95_frames": 0.8799424011518744,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "interrupted_end": {
+              "expected": 23,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 23,
+                "min": 16.666000000000736,
+                "median": 16.66699999999821,
+                "p95": 16.667000000005316,
+                "p99": 16.667000000005316,
+                "max": 16.667000000005316,
+                "min_frames": 0.99994000120002,
+                "median_frames": 0.9999999999998925,
+                "p95_frames": 1.0000000000003189,
+                "p99_frames": 1.0000000000003189,
+                "max_frames": 1.0000000000003189
+              }
+            }
+          },
+          "T": {
+            "all": {
+              "expected": 3501,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 3501,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              },
+              "unexpected": 0,
+              "bunched_share": 0.0
+            },
+            "0": {
+              "expected": 1219,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1219,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "1": {
+              "expected": 1134,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1134,
+                "min": 0.0,
+                "median": 7.947999999998956,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.4768704625906855,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "2": {
+              "expected": 1148,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1148,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "interrupted_end": {
+              "expected": 23,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 23,
+                "min": 0.0,
+                "median": 0.0,
+                "p95": 0.0,
+                "p99": 0.0,
+                "max": 0.0,
+                "min_frames": 0.0,
+                "median_frames": 0.0,
+                "p95_frames": 0.0,
+                "p99_frames": 0.0,
+                "max_frames": 0.0
+              }
+            }
+          }
+        }
+      },
+      "log_errors": 0,
+      "log_warnings": 0
+    },
+    {
+      "name": "2026-11-21_045238_m1_pre_NQ_def_f60_r1",
+      "config": "NQ",
+      "cond": "def",
+      "fps": 60,
+      "run": 1,
+      "priming": false,
+      "exit_code": 0,
+      "wall_seconds": 25.6,
+      "command": "\"D:\\UNREAL PORTFOLIO\\P06_AnimEventClock\\Build\\Windows\\AnimEventClock\\Binaries\\Win64\\AnimEventClock.exe\" -windowed -ResX=1280 -ResY=720 -nosound -unattended -traceautostart=0 -deterministic -FPS=60 -novsync -AECChars=64 -AECSeed=1 -AECWarmup=5.0 -AECCapture=60.0 -AECConfig=NQ -AECCond=def -AECStart=pre -AECRunTag=2026-11-21_045238_m1_pre_NQ_def_f60_r1 -AECExit",
+      "run_files": true,
+      "stats": {
+        "run": {
+          "run": "2026-11-21_045238_m1_pre_NQ_def_f60_r1",
+          "config": "NQ",
+          "cond": "def",
+          "start": "pre",
+          "chars": "64",
+          "seed": "1",
+          "warmup": "5.000",
+          "capture": "60.000",
+          "benchstart": "5.000000",
+          "captureend": "65.000000",
+          "fixedstep": "0.016667",
+          "unattributed": "0",
+          "hash": "0x260BDA5F"
+        },
+        "expected": 3501,
+        "interrupted_ends": 23,
+        "actions_in_capture": 606,
+        "paths": {
+          "NQ": {
+            "all": {
+              "expected": 3501,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 3501,
+                "min": -16.154000000000224,
+                "median": -7.334000000000174,
+                "p95": 14.665999999998292,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.44003119937602286,
+                "p95_frames": 0.8799424011518744,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              },
+              "unexpected": 1,
+              "bunched_share": 0.0
+            },
+            "0": {
+              "expected": 1219,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1219,
+                "min": -16.154000000000224,
+                "median": -8.717999999998227,
+                "p95": 14.66599999999847,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.5230695386091214,
+                "p95_frames": 0.879942401151885,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "1": {
+              "expected": 1134,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1134,
+                "min": -16.154000000000224,
+                "median": -7.3330000000026985,
+                "p95": 14.665999999998292,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.43997120057615036,
+                "p95_frames": 0.8799424011518744,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "2": {
+              "expected": 1148,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1148,
+                "min": -16.154000000000224,
+                "median": -7.334000000000174,
+                "p95": 14.665999999998292,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.44003119937602286,
+                "p95_frames": 0.8799424011518744,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "interrupted_end": {
+              "expected": 23,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 23,
+                "min": 16.666000000000736,
+                "median": 16.66699999999821,
+                "p95": 16.667000000005316,
+                "p99": 16.667000000005316,
+                "max": 16.667000000005316,
+                "min_frames": 0.99994000120002,
+                "median_frames": 0.9999999999998925,
+                "p95_frames": 1.0000000000003189,
+                "p99_frames": 1.0000000000003189,
+                "max_frames": 1.0000000000003189
+              }
+            }
+          },
+          "T": {
+            "all": {
+              "expected": 3501,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 3501,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              },
+              "unexpected": 0,
+              "bunched_share": 0.0
+            },
+            "0": {
+              "expected": 1219,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1219,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "1": {
+              "expected": 1134,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1134,
+                "min": 0.0,
+                "median": 7.947999999998956,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.4768704625906855,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "2": {
+              "expected": 1148,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1148,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "interrupted_end": {
+              "expected": 23,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 23,
+                "min": 0.0,
+                "median": 0.0,
+                "p95": 0.0,
+                "p99": 0.0,
+                "max": 0.0,
+                "min_frames": 0.0,
+                "median_frames": 0.0,
+                "p95_frames": 0.0,
+                "p99_frames": 0.0,
+                "max_frames": 0.0
+              }
+            }
+          }
+        }
+      },
+      "log_errors": 0,
+      "log_warnings": 0
+    },
+    {
+      "name": "2026-11-21_045238_m1_pre_NB_def_f60_r1",
+      "config": "NB",
+      "cond": "def",
+      "fps": 60,
+      "run": 1,
+      "priming": false,
+      "exit_code": 0,
+      "wall_seconds": 25.3,
+      "command": "\"D:\\UNREAL PORTFOLIO\\P06_AnimEventClock\\Build\\Windows\\AnimEventClock\\Binaries\\Win64\\AnimEventClock.exe\" -windowed -ResX=1280 -ResY=720 -nosound -unattended -traceautostart=0 -deterministic -FPS=60 -novsync -AECChars=64 -AECSeed=1 -AECWarmup=5.0 -AECCapture=60.0 -AECConfig=NB -AECCond=def -AECStart=pre -AECRunTag=2026-11-21_045238_m1_pre_NB_def_f60_r1 -AECExit",
+      "run_files": true,
+      "stats": {
+        "run": {
+          "run": "2026-11-21_045238_m1_pre_NB_def_f60_r1",
+          "config": "NB",
+          "cond": "def",
+          "start": "pre",
+          "chars": "64",
+          "seed": "1",
+          "warmup": "5.000",
+          "capture": "60.000",
+          "benchstart": "5.000000",
+          "captureend": "65.000000",
+          "fixedstep": "0.016667",
+          "unattributed": "0",
+          "hash": "0x31AA9FA6"
+        },
+        "expected": 3501,
+        "interrupted_ends": 23,
+        "actions_in_capture": 606,
+        "paths": {
+          "NB": {
+            "all": {
+              "expected": 3501,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 3501,
+                "min": -16.154000000000224,
+                "median": -8.71800000000178,
+                "p95": -1.9999999999953388,
+                "p99": 0.0,
+                "max": 0.00100000000458067,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.5230695386093346,
+                "p95_frames": -0.11999760004771937,
+                "p99_frames": 0.0,
+                "max_frames": 5.999880029883422e-05
+              },
+              "unexpected": 1,
+              "bunched_share": 0.0
+            },
+            "0": {
+              "expected": 1219,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1219,
+                "min": -16.154000000000224,
+                "median": -8.71800000000178,
+                "p95": -1.9999999999953388,
+                "p99": 0.0,
+                "max": 0.0009999999974752427,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.5230695386093346,
+                "p95_frames": -0.11999760004771937,
+                "p99_frames": 0.0,
+                "max_frames": 5.999879987251711e-05
+              }
+            },
+            "1": {
+              "expected": 1134,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1134,
+                "min": -16.154000000000224,
+                "median": -8.71800000000178,
+                "p95": -1.9999999999953388,
+                "p99": 0.0,
+                "max": 0.0,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.5230695386093346,
+                "p95_frames": -0.11999760004771937,
+                "p99_frames": 0.0,
+                "max_frames": 0.0
+              }
+            },
+            "2": {
+              "expected": 1148,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1148,
+                "min": -16.154000000000224,
+                "median": -8.718000000000004,
+                "p95": -1.9999999999953388,
+                "p99": 0.0,
+                "max": 0.00100000000458067,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.523069538609228,
+                "p95_frames": -0.11999760004771937,
+                "p99_frames": 0.0,
+                "max_frames": 5.999880029883422e-05
+              }
+            },
+            "interrupted_end": {
+              "expected": 23,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 23,
+                "min": 99.99999999999432,
+                "median": 100.00000000000142,
+                "p95": 100.00000000000142,
+                "p99": 100.00000000000142,
+                "max": 100.00000000000142,
+                "min_frames": 5.99988000239961,
+                "median_frames": 5.999880002400037,
+                "p95_frames": 5.999880002400037,
+                "p99_frames": 5.999880002400037,
+                "max_frames": 5.999880002400037
+              }
+            }
+          },
+          "T": {
+            "all": {
+              "expected": 3501,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 3501,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              },
+              "unexpected": 0,
+              "bunched_share": 0.0
+            },
+            "0": {
+              "expected": 1219,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1219,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "1": {
+              "expected": 1134,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1134,
+                "min": 0.0,
+                "median": 7.947999999998956,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.4768704625906855,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "2": {
+              "expected": 1148,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1148,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "interrupted_end": {
+              "expected": 23,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 23,
+                "min": 0.0,
+                "median": 0.0,
+                "p95": 0.0,
+                "p99": 0.0,
+                "max": 0.0,
+                "min_frames": 0.0,
+                "median_frames": 0.0,
+                "p95_frames": 0.0,
+                "p99_frames": 0.0,
+                "max_frames": 0.0
+              }
+            }
+          }
+        }
+      },
+      "log_errors": 0,
+      "log_warnings": 0
+    },
+    {
+      "name": "2026-11-21_045238_m1_pre_NB_def_f60_r2",
+      "config": "NB",
+      "cond": "def",
+      "fps": 60,
+      "run": 2,
+      "priming": false,
+      "exit_code": 0,
+      "wall_seconds": 26.4,
+      "command": "\"D:\\UNREAL PORTFOLIO\\P06_AnimEventClock\\Build\\Windows\\AnimEventClock\\Binaries\\Win64\\AnimEventClock.exe\" -windowed -ResX=1280 -ResY=720 -nosound -unattended -traceautostart=0 -deterministic -FPS=60 -novsync -AECChars=64 -AECSeed=1 -AECWarmup=5.0 -AECCapture=60.0 -AECConfig=NB -AECCond=def -AECStart=pre -AECRunTag=2026-11-21_045238_m1_pre_NB_def_f60_r2 -AECExit",
+      "run_files": true,
+      "stats": {
+        "run": {
+          "run": "2026-11-21_045238_m1_pre_NB_def_f60_r2",
+          "config": "NB",
+          "cond": "def",
+          "start": "pre",
+          "chars": "64",
+          "seed": "1",
+          "warmup": "5.000",
+          "capture": "60.000",
+          "benchstart": "5.000000",
+          "captureend": "65.000000",
+          "fixedstep": "0.016667",
+          "unattributed": "0",
+          "hash": "0x31AA9FA6"
+        },
+        "expected": 3501,
+        "interrupted_ends": 23,
+        "actions_in_capture": 606,
+        "paths": {
+          "NB": {
+            "all": {
+              "expected": 3501,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 3501,
+                "min": -16.154000000000224,
+                "median": -8.71800000000178,
+                "p95": -1.9999999999953388,
+                "p99": 0.0,
+                "max": 0.00100000000458067,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.5230695386093346,
+                "p95_frames": -0.11999760004771937,
+                "p99_frames": 0.0,
+                "max_frames": 5.999880029883422e-05
+              },
+              "unexpected": 1,
+              "bunched_share": 0.0
+            },
+            "0": {
+              "expected": 1219,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1219,
+                "min": -16.154000000000224,
+                "median": -8.71800000000178,
+                "p95": -1.9999999999953388,
+                "p99": 0.0,
+                "max": 0.0009999999974752427,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.5230695386093346,
+                "p95_frames": -0.11999760004771937,
+                "p99_frames": 0.0,
+                "max_frames": 5.999879987251711e-05
+              }
+            },
+            "1": {
+              "expected": 1134,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1134,
+                "min": -16.154000000000224,
+                "median": -8.71800000000178,
+                "p95": -1.9999999999953388,
+                "p99": 0.0,
+                "max": 0.0,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.5230695386093346,
+                "p95_frames": -0.11999760004771937,
+                "p99_frames": 0.0,
+                "max_frames": 0.0
+              }
+            },
+            "2": {
+              "expected": 1148,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1148,
+                "min": -16.154000000000224,
+                "median": -8.718000000000004,
+                "p95": -1.9999999999953388,
+                "p99": 0.0,
+                "max": 0.00100000000458067,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.523069538609228,
+                "p95_frames": -0.11999760004771937,
+                "p99_frames": 0.0,
+                "max_frames": 5.999880029883422e-05
+              }
+            },
+            "interrupted_end": {
+              "expected": 23,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 23,
+                "min": 99.99999999999432,
+                "median": 100.00000000000142,
+                "p95": 100.00000000000142,
+                "p99": 100.00000000000142,
+                "max": 100.00000000000142,
+                "min_frames": 5.99988000239961,
+                "median_frames": 5.999880002400037,
+                "p95_frames": 5.999880002400037,
+                "p99_frames": 5.999880002400037,
+                "max_frames": 5.999880002400037
+              }
+            }
+          },
+          "T": {
+            "all": {
+              "expected": 3501,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 3501,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              },
+              "unexpected": 0,
+              "bunched_share": 0.0
+            },
+            "0": {
+              "expected": 1219,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1219,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "1": {
+              "expected": 1134,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1134,
+                "min": 0.0,
+                "median": 7.947999999998956,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.4768704625906855,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "2": {
+              "expected": 1148,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1148,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "interrupted_end": {
+              "expected": 23,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 23,
+                "min": 0.0,
+                "median": 0.0,
+                "p95": 0.0,
+                "p99": 0.0,
+                "max": 0.0,
+                "min_frames": 0.0,
+                "median_frames": 0.0,
+                "p95_frames": 0.0,
+                "p99_frames": 0.0,
+                "max_frames": 0.0
+              }
+            }
+          }
+        }
+      },
+      "log_errors": 0,
+      "log_warnings": 0
+    },
+    {
+      "name": "2026-11-21_045238_m1_pre_NQ_def_f60_r2",
+      "config": "NQ",
+      "cond": "def",
+      "fps": 60,
+      "run": 2,
+      "priming": false,
+      "exit_code": 0,
+      "wall_seconds": 26.5,
+      "command": "\"D:\\UNREAL PORTFOLIO\\P06_AnimEventClock\\Build\\Windows\\AnimEventClock\\Binaries\\Win64\\AnimEventClock.exe\" -windowed -ResX=1280 -ResY=720 -nosound -unattended -traceautostart=0 -deterministic -FPS=60 -novsync -AECChars=64 -AECSeed=1 -AECWarmup=5.0 -AECCapture=60.0 -AECConfig=NQ -AECCond=def -AECStart=pre -AECRunTag=2026-11-21_045238_m1_pre_NQ_def_f60_r2 -AECExit",
+      "run_files": true,
+      "stats": {
+        "run": {
+          "run": "2026-11-21_045238_m1_pre_NQ_def_f60_r2",
+          "config": "NQ",
+          "cond": "def",
+          "start": "pre",
+          "chars": "64",
+          "seed": "1",
+          "warmup": "5.000",
+          "capture": "60.000",
+          "benchstart": "5.000000",
+          "captureend": "65.000000",
+          "fixedstep": "0.016667",
+          "unattributed": "0",
+          "hash": "0x260BDA5F"
+        },
+        "expected": 3501,
+        "interrupted_ends": 23,
+        "actions_in_capture": 606,
+        "paths": {
+          "NQ": {
+            "all": {
+              "expected": 3501,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 3501,
+                "min": -16.154000000000224,
+                "median": -7.334000000000174,
+                "p95": 14.665999999998292,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.44003119937602286,
+                "p95_frames": 0.8799424011518744,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              },
+              "unexpected": 1,
+              "bunched_share": 0.0
+            },
+            "0": {
+              "expected": 1219,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1219,
+                "min": -16.154000000000224,
+                "median": -8.717999999998227,
+                "p95": 14.66599999999847,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.5230695386091214,
+                "p95_frames": 0.879942401151885,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "1": {
+              "expected": 1134,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1134,
+                "min": -16.154000000000224,
+                "median": -7.3330000000026985,
+                "p95": 14.665999999998292,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.43997120057615036,
+                "p95_frames": 0.8799424011518744,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "2": {
+              "expected": 1148,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1148,
+                "min": -16.154000000000224,
+                "median": -7.334000000000174,
+                "p95": 14.665999999998292,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": -0.9692206155877016,
+                "median_frames": -0.44003119937602286,
+                "p95_frames": 0.8799424011518744,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "interrupted_end": {
+              "expected": 23,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 23,
+                "min": 16.666000000000736,
+                "median": 16.66699999999821,
+                "p95": 16.667000000005316,
+                "p99": 16.667000000005316,
+                "max": 16.667000000005316,
+                "min_frames": 0.99994000120002,
+                "median_frames": 0.9999999999998925,
+                "p95_frames": 1.0000000000003189,
+                "p99_frames": 1.0000000000003189,
+                "max_frames": 1.0000000000003189
+              }
+            }
+          },
+          "T": {
+            "all": {
+              "expected": 3501,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 3501,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              },
+              "unexpected": 0,
+              "bunched_share": 0.0
+            },
+            "0": {
+              "expected": 1219,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1219,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "1": {
+              "expected": 1134,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1134,
+                "min": 0.0,
+                "median": 7.947999999998956,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.4768704625906855,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "2": {
+              "expected": 1148,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 1148,
+                "min": 0.0,
+                "median": 7.334000000000174,
+                "p95": 14.66699999999932,
+                "p99": 14.667000000002872,
+                "max": 14.667000000002872,
+                "min_frames": 0.0,
+                "median_frames": 0.44003119937602286,
+                "p95_frames": 0.8800023999519601,
+                "p99_frames": 0.8800023999521732,
+                "max_frames": 0.8800023999521732
+              }
+            },
+            "interrupted_end": {
+              "expected": 23,
+              "missed": 0,
+              "duplicates": 0,
+              "missed_per_1000": 0.0,
+              "duplicates_per_1000": 0.0,
+              "error_ms": {
+                "count": 23,
+                "min": 0.0,
+                "median": 0.0,
+                "p95": 0.0,
+                "p99": 0.0,
+                "max": 0.0,
+                "min_frames": 0.0,
+                "median_frames": 0.0,
+                "p95_frames": 0.0,
+                "p99_frames": 0.0,
+                "max_frames": 0.0
+              }
+            }
+          }
+        }
+      },
+      "log_errors": 0,
+      "log_warnings": 0
+    }
+  ]
+}

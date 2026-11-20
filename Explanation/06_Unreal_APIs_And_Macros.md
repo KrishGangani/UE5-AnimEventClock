@@ -32,6 +32,7 @@
 | 23 | Console variables from code | S2 |
 | 24 | Mesh update settings, `DisableMovement` | S2 |
 | 25 | CSV profiler macros and small utilities | S2 |
+| 26 | `IAnimationBudgetAllocator::Get` / `SetEnabled` | S3 |
 
 ---
 
@@ -225,3 +226,7 @@ Paths in this section are relative to `Engine/Source/Runtime/Engine/` unless the
 ## 25. CSV profiler macros and small utilities
 
 `CSV_DEFINE_CATEGORY`, `CSV_EVENT` (BenchStart/BenchEnd), `CSV_CUSTOM_STAT` (fires per frame, published once per frame), `CSV_METADATA` (run description inside the capture), as in UE5-UpdateBudget. `FParse::Value`/`Param` on `FCommandLine::Get()` for `-AEC…` values; `FFileHelper::SaveStringToFile` + `FPaths::ProjectSavedDir()` for the run files; `FCrc::MemCrc32` chained over fire records for the determinism hash; `FPlatformTime::ToSeconds64(FPlatformTime::Cycles64())` for the wall clock (raw notes E0); `FApp::UseFixedTimeStep()` / `GetFixedDeltaTime()` to record the fixed step; `GFrameCounter` minus the frame of `OnWorldBeginPlay` for frame numbers; `FPlatformMisc::RequestExitWithStatus(false, Code)` to end a run with a meaningful exit code.
+
+## 26. `IAnimationBudgetAllocator::Get` / `SetEnabled`
+
+1. `IAnimationBudgetAllocator::Get(UWorld*)` returns the world's budget allocator (`Engine/Plugins/Runtime/AnimationBudgetAllocator/Source/AnimationBudgetAllocator/Public/IAnimationBudgetAllocator.h:18`; one per world, created at world initialisation and deleted at world cleanup, `Private/AnimationBudgetAllocatorModule.cpp:42–58`); `SetEnabled(bool)` switches that allocator on or off (`IAnimationBudgetAllocator.h:73`; `Private/AnimationBudgetAllocator.cpp:1328–1332`). 2. The allocator is created **disabled** (`AnimationBudgetAllocator.cpp:71`) and works only when both `a.Budget.Enabled` (default 0, `AnimationBudgetAllocatorCVars.cpp:7`) and `SetEnabled(true)` are on (`:1191, 1366`); the cvar alone does nothing. 3. `SetEnabled` calls `CheckAndPropagateUpdateStatusChange`, which re-reads the cvar and hands every registered mesh to the allocator's tick-rate control (`:1363–1380`); meshes registered later (deferred to world begin play, `:1414–1425`) are taken over at registration. 4. Budget conditions only. 5. Enabling before the cvar is set (the status check reads the cvar). 6. Setting only the cvar, as the first M1 batch did. 7. `IAnimationBudgetAllocator::Get(GetWorld())->SetEnabled(true);` 8. `UAECBenchSubsystem::PrepareCondition`, before any character exists; nothing to undo, since the allocator lives and dies with the world.

@@ -14,12 +14,14 @@
 
 ## Problem statement
 
-Hit windows, spawn points and ability commit points usually live in **anim notifies**, and a notify fires only in a frame in which its mesh's animation updates. Update-rate optimisation and the Animation Budget Allocator make such events late and bunched, "only tick when rendered" stops them off-screen and on dedicated servers, a server advances a remote player's montage once per client move, and client-side position corrections can skip or repeat them. BranchingPoint notifies don't help: they are precise inside an update frame but don't create update frames. All of this was read in the 5.8.4 source; **how large each effect is will be measured before anything is built**. Details: [Explanation/01_Problem_Analysis.md](Explanation/01_Problem_Analysis.md) and [01b_Research_Findings.md](Explanation/01b_Research_Findings.md).
+Hit windows, spawn points and ability commit points usually live in **anim notifies**, and a notify fires only in a frame in which its mesh's animation updates. Update-rate optimisation and the Animation Budget Allocator move such events by several frames, early as well as late, "only tick when rendered" stops them off-screen and on dedicated servers, a server advances a remote player's montage once per client move, and client-side position corrections can skip or repeat them. BranchingPoint notifies don't help: they are precise inside an update frame but don't create update frames. All of this was read in the 5.8.4 source and **measured before anything was built**: the single-process effects in step S3 (below, with two the source reading had not predicted), the network ones in S4. Details: [Explanation/01_Problem_Analysis.md](Explanation/01_Problem_Analysis.md) and [01b_Research_Findings.md](Explanation/01b_Research_Findings.md).
 
 **What Phase 2 changed in this statement:**
 - The effects are **conditional**: with engine defaults a montage notify is within one frame of its time. The project measures them under the settings large projects enable, and claims nothing for a condition the baselines don't fail (the "problem gate", `01` §6.4).
 - The 5.6.1 server bug (UE-308913, repeated notify-state begin/end on a dedicated server) **cannot be confirmed open in 5.8.4**: the code path was restructured in 5.8. It is measured here, not assumed.
 - "Early in look-ahead mode" holds only for "root motion from everything" meshes.
+
+**What the single-process baselines measured (step S3, 5.8.4, before any event-clock code):** see [Benchmark results](#benchmark-results).
 
 ## Engineering approach
 
@@ -49,7 +51,19 @@ BranchingPoint notifies, `a.EnableQueuedAnimEventsOnServer` (and 5.8's new `a.No
 
 ## Benchmark results
 
-*(pending, Phases 5 and 8)*. The baselines are captured first (steps S3–S4), before the event clock exists. Raw data in [Benchmarks/](Benchmarks/README.md).
+**Single-process baselines (S3, M1):** 64 NPCs, fixed step, packaged Development, pinned to the performance cores, 2 interleaved runs per combination, every combination bit-identical across its runs (same fire hash). Error = fire − due, in frames of the run; the **problem gate** (01 §6.4) is p99 |error| > 1 frame or any missed / duplicate event. Full tables: [09 S3](Explanation/09_Testing_And_Benchmarks.md), batches in [Benchmarks/](Benchmarks/README.md).
+
+| Condition | Queued (NQ) | BranchingPoint (NB) | Timers (T) | Gate |
+|---|---|---|---|---|
+| Engine defaults, 30/60/144 fps | instants and window begins 0–1 frame; **window ends always 1–2 frames late** | 0–1 frame | 0–0.88 frame | **problem for Queued window ends only** |
+| URO (engine rates, forced 2, forced 4) | **2.9 frames early to 3.9 late** (window ends up to 7.4 late), nothing lost | the same range | 0–0.88 | **problem** |
+| Budget allocator, forced rate 2 / 4 | the same as URO at that rate (−1…+2, −2.9…+3.9 frames) | the same | 0–0.88 | **problem** |
+| Look-ahead (root motion from everything + URO 4) | **drifts up to 0.7 s early** (the animation runs ~12.5% fast at 60 fps) | the same drift | 0–0.88 | **problem** |
+| Root motion from everything, URO off | **every Queued instant notify of a rendered mesh is lost** (59% of them here); timing otherwise as defaults | unaffected | 0–0.88 | **problem** |
+| `OnlyTickPoseWhenRendered` | **off-screen: nothing fires**; far, small meshes: 24% lost | the same | nothing lost | **problem** |
+| Start order (montage started before vs after the mesh's tick) | moves every event by up to one frame (early vs late) | the same | unaffected | a definition issue, not a failure |
+
+**What this means for the claims.** On the authority, a timer started with the action is already within one frame in every condition, so the single-process target for AnimEventClock (SC1) is **not** "more accurate than timers": it is timer-grade timing while the events stay authored in the montage, with play rate, sections and interruption handled in one place, and (S7) replicated. The notify failures above are what it will be measured against in Phase 8; nothing is claimed for it yet. Network baselines (S4) are next.
 
 ## Recorded demonstration
 

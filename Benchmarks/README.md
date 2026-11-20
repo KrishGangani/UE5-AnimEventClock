@@ -25,7 +25,7 @@ Every number in this project's write-up must trace back to a file in this folder
 `<batch>_<Config>_<Condition>_<Rate>_r<run>[_<role>].<ext>`, with `<batch>` = `YYYY-MM-DD_HHMMSS[_label]`; the runner refuses to overwrite.
 
 - `<Config>`: `NQ` Queued notifies · `NB` BranchingPoint notifies · `T` timers · `G` GAS · `AEC` AnimEventClock (in single-process runs T and AEC are recorded inside the NQ/NB runs, `01` §6.2).
-- `<Condition>`: `def` defaults · `uro2` / `uro4` forced URO rate · `urooff` not rendered · `la4` look-ahead · `aba2` / `aba4` forced budget rate · `abacap` off-screen cap · `vis` `OnlyTickPoseWhenRendered` · `startpre` / `startpost` start order.
+- `<Condition>` (as implemented in S2–S3, `-AECCond`): `def` defaults · `uro` URO at the engine's own rates · `uro2` / `uro4` forced URO rate · `la4` look-ahead (root motion from everything + URO rate 4) · `rme` root motion from everything without URO (the S3 control) · `aba2` / `aba4` forced budget rate · `vis` `OnlyTickPoseWhenRendered`. The behind-camera band is the "not rendered" case inside every run. The start order is not part of the name: a batch with `--start pre` says so in its label (`m1_pre`) and its manifest. The off-screen budget cap is a Phase 8 item.
 - `<Rate>`: `f30` / `f60` / `f144` (fixed step) for single-process runs; `l0` / `l100` / `l200` (added round trip in ms, `j` suffix for jitter) for network runs.
 - `<role>` (network runs): `srv`, `cli1`, …
 - Example: `2026-12-01_101500_m1_NQ_uro4_f60_r1_events.csv`, with `2026-12-01_101500_m1_manifest.json` in `Raw\` and `2026-12-01_101500_m1_summary.md` in `Summaries\`.
@@ -51,4 +51,12 @@ Command line:      exact, per run, in the manifest
 
 | Batch | Configs | Conditions | Runs | Purpose | Summary |
 |---|---|---|---|---|---|
-| — | — | — | — | No batch has run yet. The first batch is the M1 single-process baseline in step S3 ([03](../Explanation/03_Implementation_Roadmap.md)) | — |
+| `2026-11-21_034755_s2check` | NQ, NB | def, 60 fps, 20 s capture | 4 + 1 | S2 harness check | [summary](Summaries/2026-11-21_034755_s2check_summary.md) |
+| `2026-11-21_041947_s2recheck` | NQ, NB | def, 60 fps, 20 s capture | 4 + 1 | S2 re-check after review and simplify | [summary](Summaries/2026-11-21_041947_s2recheck_summary.md) |
+| `2026-11-21_042059_m1_f60` | NQ, NB (+T) | def, uro, uro2, uro4, la4, aba2*, aba4*, vis at 60 fps | 32 + 1 | M1 baselines (S3) | [summary](Summaries/2026-11-21_042059_m1_f60_summary.md) |
+| `2026-11-21_043638_m1_fps` | NQ, NB (+T) | def, uro4, aba4* at 30 and 144 fps | 24 + 1 | M1 baselines (S3) | [summary](Summaries/2026-11-21_043638_m1_fps_summary.md) |
+| `2026-11-21_045238_m1_pre` | NQ, NB (+T) | def at 60 fps, start order "pre" | 4 + 1 | M1, H8 (S3) | [summary](Summaries/2026-11-21_045238_m1_pre_summary.md) |
+| `2026-11-21_051003_m1_fix` | NQ, NB (+T) | def, aba2, aba4, rme at 60 fps | 16 + 1 | M1 after the budget fix, plus the `rme` control (S3-f) | [summary](Summaries/2026-11-21_051003_m1_fix_summary.md) |
+| `2026-11-21_051748_m1_fixfps` | NQ, NB (+T) | aba4 at 30 and 144 fps | 8 + 1 | M1 after the budget fix (S3-f) | [summary](Summaries/2026-11-21_051748_m1_fixfps_summary.md) |
+
+\* Invalid: the budget allocator was never enabled (`09` S3-b); these runs equal `def` and are kept only as the record of the mistake. Re-measured in `m1_fix` / `m1_fixfps`.

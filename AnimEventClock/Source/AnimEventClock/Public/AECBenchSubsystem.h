@@ -40,7 +40,7 @@ class USkeletalMeshComponent;
  *   -AECWarmup=SEC       warm-up seconds (default 5)
  *   -AECCapture=SEC      capture seconds (default 60)
  *   -AECConfig=NQ|NB     montage variant: Queued or BranchingPoint markers (default NQ)
- *   -AECCond=NAME        def | uro | uro2 | uro4 | la4 | aba2 | aba4 | vis   (default def; 01 §6.2)
+ *   -AECCond=NAME        def | uro | uro2 | uro4 | la4 | rme | aba2 | aba4 | vis   (default def; 01 §6.2; rme added in S3)
  *   -AECStart=post|pre   where actions start: this Tick, after the meshes ticked (post, default), or the character's tick
  *                        before its mesh (pre: the montage then advances a whole frame on its first update; 01 H8)
  *   -AECRunTag=NAME      output file prefix (default "run"); files go to Saved/AECRuns/
