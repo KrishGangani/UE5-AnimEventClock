@@ -93,3 +93,7 @@ P06_AnimEventClock\
 ├── Tools\           ← build, package, smoke, affinity (and later run and stats) scripts
 └── AnimEventClock\  ← the Unreal Engine project
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE). Unreal Engine itself, and any engine content this project references by path, is not included and is covered by Epic Games' own license.
