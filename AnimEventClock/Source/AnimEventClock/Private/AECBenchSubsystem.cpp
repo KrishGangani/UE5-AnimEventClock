@@ -7,8 +7,6 @@
 #include "AECDemoGasCharacter.h"
 #include "AECDemoMontages.h"
 #include "AECDemoPlayerController.h"
-#include "AECEventNotify.h"
-#include "AECEventWindowNotifyState.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraActor.h"
@@ -336,35 +334,12 @@ bool UAECBenchSubsystem::LoadMontages()
 			return false;
 		}
 
-		// The keys come from the montage's own notifies, exactly as the event clock will read them; a window gives two.
+		// The keys come from the event clock's own timeline (S5): the montage's notifies at their trigger times, sorted,
+		// windows paired. One reader for both, so the expected events are exactly the ones the clock will fire.
 		FMontageInfo& Info = MontageInfos.AddDefaulted_GetRef();
 		Info.Name = Montage->GetName();
 		Info.Length = Montage->GetPlayLength();
-		for (const FAnimNotifyEvent& Event : Montage->Notifies)
-		{
-			if (const UAECEventNotify* Instant = Cast<UAECEventNotify>(Event.Notify))
-			{
-				Info.Keys.Add({ Instant->EventName, EAECEventPhase::Instant, Event.GetTriggerTime() });
-			}
-			else if (const UAECEventWindowNotifyState* Window = Cast<UAECEventWindowNotifyState>(Event.NotifyStateClass))
-			{
-				Info.Keys.Add({ Window->EventName, EAECEventPhase::WindowBegin, Event.GetTriggerTime() });
-				Info.Keys.Add({ Window->EventName, EAECEventPhase::WindowEnd, Event.GetEndTriggerTime() });
-			}
-		}
-		Info.Keys.StableSort([](const FKey& A, const FKey& B) { return A.Position < B.Position; });
-		for (int32 Key = 0; Key < Info.Keys.Num(); ++Key)
-		{
-			// Pair each window's begin and end once, so nothing searches by name later (window names are unique per montage).
-			if (Info.Keys[Key].Phase == EAECEventPhase::WindowBegin)
-			{
-				const FName WindowName = Info.Keys[Key].Name;
-				const int32 End = Info.Keys.IndexOfByPredicate([WindowName](const FKey& Candidate)
-					{ return Candidate.Name == WindowName && Candidate.Phase == EAECEventPhase::WindowEnd; });
-				Info.Keys[Key].PairKey = End;
-				Info.Keys[End].PairKey = Key;
-			}
-		}
+		Info.Keys = FAECMontageTimeline::Build(*Montage).GetKeys();
 		if (Info.Keys.IsEmpty() || Info.Length <= 0.f)
 		{
 			UE_LOG(LogAECBench, Error, TEXT("Montage %s has no AEC markers or no length."), *Path);

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "AECEventTypes.h"
+#include "AECMontageTimeline.h"
 #include "Engine/TimerHandle.h"
 #include "Math/RandomStream.h"
 #include "Net/Core/Connection/NetEnums.h"
@@ -152,14 +153,8 @@ private:
 		bool bExitWhenDone = false;
 	};
 
-	/** One authored event of a montage, read from the montage's own notifies (a window gives two keys). */
-	struct FKey
-	{
-		FName Name;
-		EAECEventPhase Phase = EAECEventPhase::Instant;
-		float Position = 0.f;
-		int32 PairKey = INDEX_NONE;   // a window's begin <-> end key; INDEX_NONE for an instant event
-	};
+	/** One authored event of a montage: the event clock's own key (S5), so the director expects exactly what the clock reads. */
+	using FKey = FAECTimelineKey;
 
 	/** A loaded demo montage and its keys, sorted by position. */
 	struct FMontageInfo

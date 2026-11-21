@@ -83,8 +83,8 @@ D:\UNREAL PORTFOLIO\P06_AnimEventClock\Tools\                     ← Python + b
 | `UAECEventWindowNotifyState` | `UAnimNotifyState` | **Authoring marker** for a window (hit window, combo window): `FName EventName`; `NotifyBegin`/`NotifyEnd` (`AnimNotifyState.h:74, 76`) only feed the same hook | Windows are the most common gameplay use. One class keeps begin/end paired |
 | `EAECEventPhase` | `UENUM(BlueprintType)`, `uint8` | `Instant`, `WindowBegin`, `WindowEnd` | One field tells a handler what happened |
 | `FAECEventInfo` | `USTRUCT(BlueprintType)` | What a handler receives: `EventName`, `Phase`, `ActionId`, `KeyIndex`, `Pass`, `DueTime` (server time), `FireTime`, `LatenessSeconds`, `bInterrupted` (a window closed by a stop) | Handlers can use the **exact** due time, for example to rewind a hit trace to it |
-| `FAECMontageTimeline` | Plain C++ struct (no UObject) | Built from a `UAnimMontage` when an action starts: sorted keys (name, position, phase, index) from the montage's own `Notifies` (`Classes/Animation/AnimSequenceBase.h:41–43`), and sections (start, end, next) from `CompositeSections`. `Advance(Playhead, DeltaPosition, Out)` walks the section path and outputs every key crossed in `(old, new]` with its exact offset | The **policy**, testable with a hand-made timeline and no world (S5 tests). It holds no UObject pointers. *Rejected:* an edit-time baked data asset (a second copy that goes stale, `01b #10`); a per-montage global cache (lifetime bookkeeping before any data says the build cost matters; SC5 measures it) |
-| `FAECPlayhead` | Plain struct | Section index, position, loop pass, finished flag | The only mutable state of an action's timeline. Monotonic by construction |
+| `FAECMontageTimeline` | Plain C++ struct (no UObject) | Built from a `UAnimMontage` when an action starts: sorted keys (name, position, phase, index) from the montage's own `Notifies` (`Classes/Animation/AnimSequenceBase.h:41–43`), and sections (start, end, next) from `CompositeSections`. `Advance(Playhead, DeltaPosition, Out)` walks the section path and outputs every key crossed in `(old, new]` (`[old, new]` right after a start, a loop back or a jump, so a key at a section's start fires on every pass) with its exact offset; a window left without reaching its end (a loop back or a jump from inside it, or a stop) gets a **forced** end crossing, so every begin has exactly one end (S5) | The **policy**, testable with a hand-made timeline and no world (S5 tests). It holds no UObject pointers. *Rejected:* an edit-time baked data asset (a second copy that goes stale, `01b #10`); a per-montage global cache (lifetime bookkeeping before any data says the build cost matters; SC5 measures it) |
+| `FAECPlayhead` | Plain struct | Section index, position, loop pass, finished flag, whether the next advance includes its start position, and the open windows | The only mutable state of an action's timeline. Monotonic by construction |
 | `FAECReplicatedAction` | `USTRUCT()` | What the network carries: `Montage` (`TObjectPtr`), `StartTime` (server time, `double`), `PlayRate`, `StartSection`, `ActionId` (`uint16`), `StopTime` (`< 0` = running), `Jumps` (up to 8 `{Time, Section}`) | Four facts define an action (§2); jumps and stop make the path reproducible on every machine. *Rejected:* replicating the current position like GAS (`01b #8`): position is stale by the one-way delay and needs threshold corrections |
 | `UAECEventClockComponent` | `UActorComponent`, replicated | The **mechanism**: `PlayAction` / `StopAction` / `JumpToSection` (authority), the replicated action and `OnRep`, the playhead, the per-frame dispatch, `OnClockEvent` (`BlueprintAssignable` dynamic multicast), `IsWindowOpen`, the montage follower, telemetry counters | A component attaches to any actor (characters, Blueprint actors, actors without a mesh). Ticks in `TG_PrePhysics`, the same group as the mesh that would have fired the notify, and **only while an action is active**. *Rejected:* an interface (every actor re-implements replication and dispatch); logic inside the character (not reusable) |
 | `UAECClockSyncComponent` | `UActorComponent` on the `APlayerController`, replicated | Client→server `ServerRequestTime(ClientTime)` (unreliable), server→client `ClientReportTime(ClientTime, ServerTime)`; keeps the last 8 samples and uses the **minimum-round-trip** one (Cristian's method, raw notes C6). `GetServerTimeSeconds()`; static `AECClock::GetServerTime(const UWorld*)` used by every clock component | The engine's `GetServerWorldTimeSeconds()` lags by the one-way delay (`01b #9`). RPCs need an owning connection, which the player controller has. *Rejected:* reusing `APlayerState` ping (an average over ping buckets, `Private/PlayerState.cpp:43–71`, replicated to other players only as a compressed byte, `Classes/GameFramework/PlayerState.h:56–57, 123–124`; it gives no single round-trip sample to pick the best one from) |
@@ -213,21 +213,29 @@ sequenceDiagram
 ### 6.3 Timeline policy, in code-sized pseudocode (the real code mirrors this)
 
 ```text
-Advance(head, delta, out):                       // delta = gameplay seconds × play rate, > 0
+Advance(head, delta, out):                       // delta = gameplay seconds × play rate; nothing unless > 0
   remaining = delta
-  while remaining > 0 and not head.finished and crossings < 256:
+  while remaining > 0 and not head.finished:
     section = Sections[head.section]
-    step = min(remaining, section.end − head.position)
-    for key in keys with head.position < key.position <= head.position + step:   // same (Prev, Cur] rule as the engine
-      out.add(key, offset = delta − remaining + (key.position − head.position))
-    head.position += step;  remaining −= step
-    if head.position >= section.end:
-      if section.next == NONE: head.finished = true
-      else: if Sections[section.next].start <= head.position: head.pass += 1   // looping back
-            head.section = section.next; head.position = Sections[section.next].start
+    to = (section.end − head.position <= remaining) ? section.end : head.position + remaining   // snapped onto the end
+    if to == head.position and ++emptySteps > 256: head.finished = true; return false      // zero-length loop guard
+    for key in keys with head.position < key.position <= to       // (Prev, Cur], the engine's rule ...
+                     (or head.position <= key.position when head.includeStart)               // ... [Prev, Cur] after a start/loop/jump
+      cross(key, offset = delta − remaining + (key.position − head.position))            // keeps head.openWindows
+    remaining −= to − head.position;  head.position = to;  head.includeStart = false
+    if to == section.end:
+      if section.next == NONE: close every open window here (forced ends); head.finished = true; break
+      if next.start == head.position: head.section = section.next   // a continuation
+      else: EnterSection(head, section.next)        // a loop back or a skip
+
+EnterSection(head, section):                       // also what JumpToSection does
+  close every open window here (forced end crossings, in key order: every crossing of a path is then ordered by (pass, position, key))
+  if section.start < head.position (montage time already passed): head.pass += 1
+  head.section = section; head.position = section.start; head.includeStart = true
+  // the next advance also begins every window that spans section.start (the engine begins a state entered partway)
 ```
 
-`due time of a crossing = Now − (delta − offset) / PlayRate`. The cap of 256 crossings per call guards a zero-length looping section. Key positions are taken with `FAnimNotifyEvent::GetTriggerTime()` / `GetEndTriggerTime()`, not the raw link time, so the engine's tiny start/end trigger offsets (`Private/Animation/AnimTypes.cpp:12–37, 81–94`) apply to the clock exactly as to the notify, and a key authored at 0 behaves the same way on both paths (S5 tests it).
+`due time of a crossing = Now − (delta − offset) / max(PlayRate, 0.01)`. The guard counts only steps in a row that make no progress, so a long advance through a normal loop (a late join catching up) never trips it (S5 code review). `JumpToSection` closes the open windows the same way and starts a new pass when it goes back in montage time; `Stop` closes them and finishes the playhead. Key positions are taken with `FAnimNotifyEvent::GetTriggerTime()` / `GetEndTriggerTime()`, not the raw link time, so the engine's tiny start/end trigger offsets (`Private/Animation/AnimTypes.cpp:12–37, 81–94`) apply to the clock exactly as to the notify, and a key authored at 0 behaves the same way on both paths (S5 tests it).
 
 ## 7. Defaults and why
 
@@ -315,6 +323,8 @@ Phase 4 created the four modules empty, plus the `.uproject` plugin list (`AnimE
 | Default start order "post" (S2) | A montage started after the meshes ticked first advances next frame, so notify errors start at 0; "pre" is kept as the H8 variant |
 | Demo characters: shadows off, movement disabled (S2) | "Off screen" must mean "not rendered"; look-ahead runs must not move characters (code review) |
 | The validator's seeded-defect montages are made in S8, with the validator | S1 makes only the demo montages, so each step stays small |
+| The timeline's crossing range includes its start after a start, a loop back or a jump; windows left early get a forced end; the guard counts empty steps (S5) | A key at a section's start must fire on every pass; every begin needs exactly one end; a crossing cap would end a normal loop during a long catch-up (code review) |
+| The director reads its keys through `FAECMontageTimeline::Build` (S5) | One reader: the expected events are exactly the ones the clock will fire |
 | The budget conditions enable the world's allocator as well as the cvar (S3) | The cvar alone changed nothing (09 S3-b) |
 | Baseline G uses its own character class with the ability system (S4) | NQ/NB/T runs keep a character without GAS; G's montage and rate travel in the activation's event data, which needs a gameplay tag to reach the owning client |
 | The director has a client mode, the recorder (S4) | One class for every role keeps the files and their analysis identical; a client never directs, it only follows the server's messages |

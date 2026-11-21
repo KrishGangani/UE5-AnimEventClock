@@ -67,3 +67,18 @@
 | Found by simplify: **one configuration decided in several places** | The director tested "G" at spawn, at play and at stop | A virtual play / stop on the character class chosen at spawn | — |
 | ⚠ caught: **an ability that never ends** | With `bAllowInterruptAfterBlendOut = false`, an interruption after the natural blend-out began fires no delegate | Create the task with `bAllowInterruptAfterBlendOut = true` | The ability's active count grows through a run |
 | ⚠ caught: **a recorder that reallocates its arrays mid-run** | Client frame-time spikes that look like network jitter | Reserve on the recorder path too | Client frame-interval p99 against the server's |
+
+## S5: the pure timeline
+
+| Mistake | How to spot it | How to prevent it | How to debug it |
+|---|---|---|---|
+| ⚠ caught: **a step cap that ends normal actions** | A looping action stops firing after a long frame or a late join | Guard only against steps that make no progress | A 200-loop advance in the tests |
+| ⚠ caught: **pairing a window's keys by name and order** | An inverted (zero-length) window keeps no partner; code that indexes the partner crashes | Link the two keys when they are added, re-point them after sorting | The inverted-window test |
+| ⚠ caught: **a window left without an end** | A loop or a jump out of a window: begin, begin, begin with no end; "is the window open" stays true | Close open windows with forced ends at every discontinuity and at a stop | The cut-window and jump tests |
+| ⚠ caught: **a float step that stops one ulp short of a section end** | A key at the end and the section change slip to the next frame | Snap the step onto the end when the delta reaches it | The snap test (0.1 + 0.6 vs 0.7) |
+| ⚠ caught: **a test tolerance tighter than float inputs allow** | `0.5f − 0.2f` is not 0.3 in double | Use binary-exact inputs (0.25, 0.5) or a tolerance that fits float | — |
+| A key exactly at a section's start | It fires only the first time through a loop | Include the start position after a start, a loop back or a jump (but not on a continuation, where the previous section already crossed it) | The loop test: the boundary key fires on pass 1 again |
+| Found by simplify: **entering a window partway without beginning it** | A start, a loop or a jump into the middle of a window: no begin, no end, "is the window open" false, while the notify state does begin | Begin every window that spans the entry point (`AnimSequenceBase.cpp:478` is the engine's rule) | The start-inside-a-window test |
+| A test body that uses a namespace's helpers without opening it | `error C3861: 'Describe': identifier not found` (the S5 first build) | `using namespace AECTimelineTests;` at the top of every test body that uses them, or qualify them | The compiler names the line |
+| Found by simplify: **two versions of "is this a loop back"** | A loop and a jump disagreed on zero-length sections | One `EnterSection` for every entry that is not a continuation | — |
+

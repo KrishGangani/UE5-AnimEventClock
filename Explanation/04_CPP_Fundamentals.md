@@ -162,3 +162,49 @@ void Handle(EAECEventPhase EventPhase);   // not "Phase": the class already has 
 ```
 - A parameter or local with the same name as a member hides the member. Unreal builds treat that as an error, and it is a classic source of bugs.
 - **In our code:** the hook handler's parameter is `EventPhase` because the director has a `Phase` (its run phase).
+
+## Added in step S5
+
+## 17. Plain value types beside `UObject`s
+
+```cpp
+class FAECMontageTimeline { TArray<FAECTimelineKey> Keys; TArray<FAECTimelineSection> Sections; /* no UObject pointers */ };
+const FAECMontageTimeline Timeline = FAECMontageTimeline::Build(*Montage);   // a copy the caller owns
+```
+- An `F` class is ordinary C++: no garbage collector, no reflection, copied and destroyed like an `int`. Because it holds only names and numbers (no pointer to the montage), it can never point at a destroyed asset and can be tested without a world.
+- **In our code:** the timeline, the playhead and the crossing; the event clock (S6) owns one timeline per action.
+
+## 18. `static constexpr` class constants
+
+```cpp
+static constexpr int32 MaxEmptyStepsPerAdvance = 256;   // a compile-time constant that belongs to the class
+```
+- `constexpr` means the value is known at compile time; `static` means one per class, not per object. Tests refer to it by name (`FAECMontageTimeline::MaxEmptyStepsPerAdvance`) instead of repeating 256.
+- **In our code:** the guard limit and the minimum play rate.
+
+## 19. Output parameters and `const` member functions
+
+```cpp
+bool Advance(FAECPlayhead& Head, float Delta, TArray<FAECCrossing>& Out) const;
+```
+- `Head` and `Out` are references the function changes (the caller's playhead moves; crossings are appended to the caller's array, which it can reuse every frame without allocating). The trailing `const` promises the timeline itself does not change, so one timeline can serve any number of playheads.
+- **In our code:** `Advance`, `JumpToSection`, `Stop`.
+
+## 20. Comparing floats
+
+```cpp
+const float To = bReachesEnd ? FMath::Max(Section.End, From) : From + Remaining;   // land exactly on the end
+TestNearlyEqual(TEXT("offset"), Out[0].Offset, 1.f, Tolerance);                    // tests compare with a tolerance
+```
+- `From + (End − From)` can be one unit in the last place (ulp) short of `End`, and then `== End` fails. Code that must decide "did we reach the end?" assigns the end itself; tests compare computed values within a small tolerance (`1e-5`).
+- **In our code:** the section-end snap in `Advance` (an S5 code-review finding); every timeline test.
+
+## 21. Sorting with an index remap
+
+```cpp
+Order.StableSort([this](int32 A, int32 B) { return Keys[A].Position < Keys[B].Position; });
+NewIndexOf[Order[NewIndex]] = NewIndex;   // then every PairKey is rewritten through NewIndexOf
+```
+- Sorting moves elements, so any index that pointed into the array (a window's begin pointing at its end) must be translated. Sorting a list of indices first gives that translation for free. `StableSort` keeps equal positions in insertion order, so a window's begin always stays before its end.
+- **In our code:** `FAECMontageTimeline::Finalize`.
+

@@ -44,6 +44,7 @@
 | 35 | Native gameplay tags: `UE_DECLARE_GAMEPLAY_TAG_EXTERN` / `UE_DEFINE_GAMEPLAY_TAG` | S4 |
 | 36 | Network emulation and process switches: `-PktLag`, `-PktLagVariance`, `-abslog`, `-ExecCmds`, `t.MaxFPS`, `-server` | S4 |
 | 37 | `UEngine::OnNetworkFailure` | S4 |
+| 38 | `Algo::LowerBoundBy` / `UpperBoundBy`; `FCompositeSection` | S5 |
 
 ---
 
@@ -285,4 +286,8 @@ Paths in this section are relative to `Engine/Source/Runtime/Engine/` unless the
 ## 37. `UEngine::OnNetworkFailure`
 
 1. An event the engine broadcasts when a net driver fails, for example when a client loses its server (`Classes/Engine/Engine.h:1986, 2390`): `(UWorld*, UNetDriver*, ENetworkFailure::Type, const FString&)`; `ENetworkFailure::ToString` names the type (`Runtime/Net/Core/Public/Net/Core/Connection/NetEnums.h:51–60`). 2. React to a lost connection before the engine's default handling (travel back to the default map). 3. Bound like any multicast event (`AddUObject`), removed with its handle. 4. A process that must not outlive its connection. 5. — 6. Not checking which world failed; forgetting to remove the binding. 7. `GEngine->OnNetworkFailure().AddUObject(this, &UAECBenchSubsystem::HandleNetworkFailure);` 8. The client recorder: a lost server ends the process with exit code 5 (with `-AECExit`) instead of a timeout.
+
+## 38. `Algo::LowerBoundBy` / `UpperBoundBy`; `FCompositeSection`
+
+1. Binary searches over a sorted range with a projection (`Core/Public/Algo/BinarySearch.h`): `LowerBoundBy` gives the first element whose projected value is not less than the value, `UpperBoundBy` the first one greater. `FCompositeSection` (`Classes/Animation/AnimMontage.h:36–60`) is a montage section: `SectionName`, `GetTime()` (its start, from `FAnimLinkableElement`, `Classes/Animation/AnimLinkableElement.h:77`) and `NextSectionName`; `UAnimMontage::GetSectionStartAndEndTime(Index, Start, End)` gives a section's start and the next array entry's start (or the play length) as its end, and `GetSectionIndex(Name)` the engine's index of a section (`AnimMontage.h:812, 819`; `Private/Animation/AnimMontage.cpp:305–317`). 2. Find the first key of a crossing range in O(log n); read the section path. 3. The projection can be a member pointer (`&FAECTimelineKey::Position`); the range must be sorted by it. The engine assumes `CompositeSections` is in time order (the montage editor keeps it so), and its section indices are what montage instances use, so the timeline takes them as they are. 4. Sorted keys. 5. Unsorted data. 6. Using the wrong bound: `LowerBound` includes a key exactly at the start, `UpperBound` excludes it, which is exactly the `[A, B]` vs `(A, B]` choice. 7. `Algo::UpperBoundBy(Keys, Position, &FAECTimelineKey::Position)` 8. `FAECMontageTimeline::FirstKeyFrom`; `Build` takes the sections exactly as the engine plays them.
 

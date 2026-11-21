@@ -11,7 +11,7 @@
 
 ---
 
-**Progress (2026-11-21):** Phase 4 ✅ (F1–F4). **S1 ✅**, **S2 ✅** (code review and simplify done; results in [09](09_Testing_And_Benchmarks.md)). **S3 ✅** (M1 captured, the gate applied, one harness mistake found and fixed, results in [09](09_Testing_And_Benchmarks.md) S3). **S4 ✅** (the network harness, its smoke run and the M2 batch; the gate applied, H4–H7 answered, 09 S4-a to S4-e).
+**Progress (2026-11-21):** Phase 4 ✅ (F1–F4). **S1 ✅**, **S2 ✅** (code review and simplify done; results in [09](09_Testing_And_Benchmarks.md)). **S3 ✅** (M1 captured, the gate applied, one harness mistake found and fixed, results in [09](09_Testing_And_Benchmarks.md) S3). **S4 ✅** (the network harness, its smoke run and the M2 batch; the gate applied, H4–H7 answered, 09 S4-a to S4-e). **S5 ✅** (the pure timeline, 12 of 12 tests, the director's keys built from it with unchanged hashes, 09 S5).
 
 ## Owner decisions after the Phase 1–4 audit (2026-11-21)
 
