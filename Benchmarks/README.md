@@ -60,5 +60,7 @@ Command line:      exact, per run, in the manifest
 | `2026-11-21_051748_m1_fixfps` | NQ, NB (+T) | aba4 at 30 and 144 fps | 8 + 1 | M1 after the budget fix (S3-f) | [summary](Summaries/2026-11-21_051748_m1_fixfps_summary.md) |
 | `2026-11-21_062044_s4regress` | NQ, NB (+T) | def, 60 fps, 20 s | 4 + 1 | S4: standalone behaviour unchanged (same hashes as S2) | [summary](Summaries/2026-11-21_062044_s4regress_summary.md) |
 | `2026-11-21_062153_s4smoke` | NQ, G (+T) | dedicated and listen server, 0 and 100 ms round trip, 20 s | 8 | S4 network smoke | [summary](Summaries/2026-11-21_062153_s4smoke_summary.md) |
+| `2026-11-21_071356_m2` | NQ, G (+T) | dedicated and listen server, 0 / 100 / 200 / 100+jitter ms round trip, 60 s | 32 + 1 | M2 network baselines (S4) | [summary](Summaries/2026-11-21_071356_m2_summary.md) |
+| `2026-11-21_080140_m2_cond` | NQ, G (+T) | dedicated server, `uro` and `vis`, 0 ms, 60 s | 8 + 1 | M2 conditions on the dedicated server (S4) | [summary](Summaries/2026-11-21_080140_m2_cond_summary.md) |
 
 \* Invalid: the budget allocator was never enabled (`09` S3-b); these runs equal `def` and are kept only as the record of the mistake. Re-measured in `m1_fix` / `m1_fixfps`.

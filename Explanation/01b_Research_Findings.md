@@ -96,10 +96,10 @@
 | H1 | URO/budget throttling makes notifies late and bunched | **Measured (S3): late and also early (up to rate − 1 frames each way), lossless**, URO and forced budget alike. Bunching not observable with this workload's metric |
 | H2 | BranchingPoint does not help under throttling | **Measured (S3): confirmed**, the same range as Queued; it only avoids the Queued end lag |
 | H3 | Look-ahead makes notifies early, possibly drifting | **Measured (S3): early and drifting** (~12.5% fast at 60 fps, up to 0.7 s early). New, separate: root motion from everything loses every Queued instant notify of a rendered mesh |
-| H4 | Visibility-based ticking delays or drops notifies off-screen and on dedicated servers | **Measured (S3, single process): drops** (behind-camera band: all; far band: 24%). Dedicated servers: S4 |
-| H5 | On servers, remote players' notify timing follows client moves | **New; supported by code** (#6) **[to measure]** |
-| H6 | Position corrections on clients cause missed or duplicate notifies | **Supported by code** (#8) **[to measure]** |
-| H7 | UE-308913 repeats notify-state begin/end on servers | **Open in 5.6.1 (report); restructured in 5.8.4; [unverified]** **[to measure]** |
+| H4 | Visibility-based ticking delays or drops notifies off-screen and on dedicated servers | **Measured (S3, single process): drops** (behind-camera band: all; far band: 24%). **Measured (S4): on a dedicated server every notify is lost**, NPCs and players alike |
+| H5 | On servers, remote players' notify timing follows client moves | **Measured (S4): confirmed**: up to 1.9 server frames early on a dedicated server (−62 ms), 2 frames on a listen server, and up to 1.7 frames late |
+| H6 | Position corrections on clients cause missed or duplicate notifies | **Measured (S4): confirmed for GAS's montage replication, as duplicates** (7–140 per 1,000 on simulated proxies at every latency, never a miss), through its blend-out restart and forward correction (`09` S4-b); direct montage playback has none |
+| H7 | UE-308913 repeats notify-state begin/end on servers | **Measured (S4): not reproduced on 5.8.4** (0 repeats in 2 × 2,544 server windows, 288 of them the remote player's, at 0–200 ms). Reported in 5.6.1; reproducing it there is not needed for the claims (`11`) |
 | H8 | A montage's start frame makes "on time" ambiguous by up to ±1 frame (01 §4) | **Measured (S3): confirmed**: started before the mesh's tick, every animation event is 0–0.97 frames early; after it, 0–1 frame late |
 
 ## 7. Carried into Phase 3

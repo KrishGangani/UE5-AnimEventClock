@@ -11,11 +11,11 @@
 
 ---
 
-**Progress (2026-11-21):** Phase 4 ✅ (F1–F4). **S1 ✅**, **S2 ✅** (code review and simplify done; results in [09](09_Testing_And_Benchmarks.md)). **S3 ✅** (M1 captured, the gate applied, one harness mistake found and fixed, results in [09](09_Testing_And_Benchmarks.md) S3). **S4**: the network harness is built and its smoke run passed (09 S4-a, S4-b); the M2 batch is queued.
+**Progress (2026-11-21):** Phase 4 ✅ (F1–F4). **S1 ✅**, **S2 ✅** (code review and simplify done; results in [09](09_Testing_And_Benchmarks.md)). **S3 ✅** (M1 captured, the gate applied, one harness mistake found and fixed, results in [09](09_Testing_And_Benchmarks.md) S3). **S4 ✅** (the network harness, its smoke run and the M2 batch; the gate applied, H4–H7 answered, 09 S4-a to S4-e).
 
 ## Owner decisions after the Phase 1–4 audit (2026-11-21)
 
-1. **UE-308913 on 5.6.1 is not reproduced now.** The server path is measured on 5.8.4 first (S4). Reproducing on 5.6.1 is an **optional Phase 8 item**, worth doing only if 5.8.4 shows no server-side problem and the evidence is needed to explain the history ([11](11_Optimization_Decisions.md)).
+1. **UE-308913 on 5.6.1 is not reproduced now.** The server path is measured on 5.8.4 first (S4). Reproducing on 5.6.1 is an **optional Phase 8 item**, worth doing only if 5.8.4 shows no server-side problem and the evidence is needed to explain the history ([11](11_Optimization_Decisions.md)). **S4 result:** 5.8.4 shows several server-side problems (late window ends, early remote-player events, URO, visibility) and no repeats, so the 5.6.1 run is not needed.
 2. **Licence:** referencing the engine's Starter Content mannequin by path, never copying or committing it, is accepted (as the project's reading of the EULA, not legal advice). Engine and template content are never committed.
 3. **Scope changes accepted:** gap lowered to medium, the edit-time bake dropped, v1 server-initiated actions only.
 

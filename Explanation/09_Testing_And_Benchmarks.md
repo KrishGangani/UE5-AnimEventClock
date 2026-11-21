@@ -172,6 +172,59 @@ Batch `2026-11-21_062153_s4smoke` ([summary](../Benchmarks/Summaries/2026-11-21_
 - **G duplicates on simulated proxies, even at 0 ms.** In 3 of 4 G runs, 10–14 duplicate fires: every event of one attack fires a second time, in one frame, at 6.017 s, the moment the montage begins its natural blend-out. Read in the source: once the simulated proxy's local montage is blending out it counts as stopped, while the server's replicated info still says "playing"; GAS then **restarts** the montage (`AbilitySystem.AllowSimulatedMontageRestart`, default on, `AbilitySystemComponent_Abilities.cpp:55, 3327–3335`) and, finding the restarted copy more than 0.1 s behind the replicated position, **jumps it forward firing every notify in between** (`:3418–3446`). This is H6's "corrections cause duplicates", in a form the Phase 2 reading did not predict.
 - **The remote player's events fire early on the server** (median −9 to −11 ms, as early as −35 ms, in server game time), while NPCs on the same server are 0–2 frames late: the server advances that character's pose by the client's moves (H5).
 
+### S4-c · The M2 batch: dedicated and listen server × NQ, G × 0 / 100 / 200 / 100+jitter ms
+
+Batch `2026-11-21_071356_m2` ([summary](../Benchmarks/Summaries/2026-11-21_071356_m2_summary.md)), queue job `20261121_062439_3c67ef` (exit 0, 3,670 s for both M2 batches): 16 NPCs + 1 remote player, 60 s capture after a 5 s warm-up, real time, `-PktLag` = half the round trip on both processes (jitter runs: ±10 ms), 2 runs per combination after one discarded priming run, pinned to the P-cores. T is recorded in every run beside the configured path. **32 of 32 runs: both processes exit 0, 0 log errors, every action received by the client, 0 missed events on any path or role.** Per run: 928 expected events (777 instants and window begins, 151 window ends), 874 of NPCs and 54 of the remote player; per server type, 2,544 windows in the batch (2,400 of NPCs, 144 of the remote player).
+
+Error = fire − due on the wall clock (due: the server's game time, mapped through its frame log); per phase bucket, median over the two runs of each run's p99 (range in brackets in the summary):
+
+| Where | Path | Instants and window begins, p99 | Window ends, p99 | Earliest | Missed / duplicates |
+|---|---|---|---|---|---|
+| Dedicated server (30 Hz), game time | NQ, G | **33.1–33.2 ms** (0.99–1.0 frame) | **58–66 ms (1.7–2.0 frames)** | **−47 to −62 ms: the remote player's events** | 0 / 0 |
+| Dedicated server, game time | T | 32.7–33.2 ms | 24–33 ms | ≥ 0 | 0 / 0 |
+| Listen server (60 fps), game time | NQ, G | 14.7–14.8 ms (0.88 frame) | **31.5–31.8 ms (1.9 frames)** | −16 to −33 ms: the remote player's | 0 / 0 |
+| Listen server, game time | T | 14.7–14.8 ms | 14.8–15.1 ms | ≥ 0 | 0 / 0 |
+| Client (60 fps), wall clock, 0 ms | NQ | 10–16 ms | 27–33 ms | −15 ms | 0 / 0 |
+| Client, 0 ms | G | 15–16 ms | 32–33 ms | −14 ms | **0 / 7–18 per 1,000 (simulated proxies)** |
+| Client, 100 ms (± 10 ms) | NQ / G | 77–83 ms | 94–100 ms | +35 to +52 ms | NQ 0 / 0; **G 0 / 20–140 per 1,000** |
+| Client, 200 ms | NQ / G | 121–149 ms | 138–166 ms | +85 to +96 ms | NQ 0 / 0; **G 0 / 67–117 per 1,000** |
+| Client, any | T (started on the start message) | ≈ the notifies' + up to 1 frame | the same | ≥ the one-way delay | 0 / 0 |
+
+Frames: the dedicated server holds 33.2–33.3 ms (p99 34.3–34.4 ms, worst 47 ms); listen server and clients 16.67 ms (p99 16.7 ms), with single hitches of up to 130 ms.
+
+**What it shows.**
+- **On a server, notifies are on time only for NPC instants.** NPC instants and window begins are within one server frame (the engine's (A, B] rule at the server's tick); **Queued window ends are 2 server frames late (66 ms at 30 Hz)**, the S3 end lag at the server's rate; and the remote player's events fire **early**, by up to 1.9 server frames (−62 ms) on the dedicated server and 2 frames (−33 ms) on the listen server, because that character's pose advances by the client's moves (**H5**). The timer path on the same characters is never early and never more than a frame late.
+- **On a client, every path is late by the one-way delay plus up to two client frames** (NQ instants: median 72 ms, p99 83 ms at 100 ms round trip; 111–124 / 121–149 ms at 200 ms). Timers started on the start message are no better: the start itself is late. This is the latency S7 compensates.
+- **GAS repeats events on simulated proxies at every latency** (**H6**): 7–140 duplicates per 1,000 events, 2–40 repeated window begins/ends per run, never a missed one; the mechanism is the one read in S4-b (the proxy restarts its blended-out montage and jumps it forward, firing everything in between). Direct montage playback (NQ), which replicates no position, has **0** duplicates.
+- **Nothing is ever lost** in the default condition, on any role, path or latency.
+- **UE-308913 is not reproduced on 5.8.4 (H7).** 0 repeated notify-state begins or ends on either server, in 2,400 NPC windows and 144 windows of the remote player's character (whose montage the server advances in `TickCharacterPose`, the path the report is about) per server type, for both NQ and G, at 0–200 ms.
+
+### S4-d · Conditions on the dedicated server (URO, visibility), 0 ms
+
+Batch `2026-11-21_080140_m2_cond` ([summary](../Benchmarks/Summaries/2026-11-21_080140_m2_cond_summary.md)): dedicated server × NQ, G × `uro` (URO on every NPC mesh) and `vis` (`OnlyTickPoseWhenRendered`), 2 runs each; 8 of 8 runs exit 0.
+
+| Condition | Server, NPCs (NQ, G) | Server, remote player | Client (simulated proxies) | Timers on the server |
+|---|---|---|---|---|
+| `uro` | instants and begins **3 frames early to 4 late** (−100 ms earliest, +131 ms p99), ends up to **7.7 frames late** (258 ms); nothing lost | unchanged (a player's pawn is exempt from URO) | NQ unchanged; **G 100 ms early** (−115 ms; the proxy is corrected towards the server's montage, which URO runs ahead) and **75 duplicates per 1,000** | 0–1 frame |
+| `vis` | **every notify lost** (1,000 per 1,000) | **every notify lost** | unchanged (the client renders) | 0–1 frame, nothing lost |
+
+On a dedicated server nothing is rendered, so URO always uses its non-rendered rate (4) and `OnlyTickPoseWhenRendered` stops every mesh (01b #2, #4): the S3 single-process results, but for **every** character on the server, including the remote player under `vis`.
+
+### S4-e · Hypotheses H4–H7 and the gate (01 §6.4)
+
+| # | Result |
+|---|---|
+| H4 | **Confirmed on dedicated servers:** `OnlyTickPoseWhenRendered` loses every server-side notify, for NPCs and players alike |
+| H5 | **Confirmed:** a remote player's notifies fire up to 1.9 server frames early on a dedicated server, 2 frames on a listen server, and are up to 1.7 frames late (45–56 ms p99 on the dedicated server) |
+| H6 | **Confirmed for GAS's montage replication, as duplicates:** 7–140 per 1,000 on simulated proxies at every latency, up to 75 per 1,000 with 100 ms early events under server URO; no missed events. Not seen with direct montage playback (no position replication) |
+| H7 | **Not reproduced on 5.8.4:** 0 repeated begin/end in 2 × 2,544 server windows (+ 636 in the URO runs) |
+
+**Gate (M2): problem on every network role for the notify paths.** On servers: window ends 2 frames late at defaults; remote-player events up to 2 frames early; under URO 3 frames early to 4 late; under `OnlyTickPoseWhenRendered` nothing at all. On clients: one-way delay + up to 2 frames on every path, and GAS duplicates. **Pass:** nothing missed at defaults; no repeated notify-state begin/end on servers (H7); timers on the authority (0–1 frame, the T rows; the dedicated server's wall-clock p99 is 34 ms, 1.02 frames, from frame-to-frame jitter, while its game-time p99 is within the frame). With the S3 gate, this fixes what the event clock is measured against in Phase 8: **on servers**, timer-grade timing for every character in every condition (SC1); **on clients**, the delay compensated (SC3, SC4) and no duplicate (SC2), where the notify paths are late by the one-way delay and GAS repeats.
+
+**Owner decision 1, checked:** the 5.6.1 reproduction of UE-308913 was worth doing only if 5.8.4 showed no server-side notify problem. It shows several (late ends, early remote-player events, URO, visibility), so it stays an optional Phase 8 item that is not needed for the claims ([11](11_Optimization_Decisions.md)).
+
+**Audit trail (S4 part 2).** No code changed: the measurements, these documents, and `DefaultGame.ini`'s `GameplayCueNotifyPaths` (S4-b4), set after the batch so every M2 run shares one configuration. The per-phase split above (instants and begins vs window ends, server game time) comes from the batch manifests through `event_stats.analyse_net` (the same buckets as S3's gate).
+
 **Audit trail for S4 (before its first build):**
 - `code-review` (medium), 5 findings, all fixed: in G, a simulated proxy's fires could go to the previous action when GAS's montage property arrives before the start message (now held and given to the next action; G clients only); the recorder did not reserve its arrays (it now sizes them from the same switches as the server); the summary described the due moment wrongly (it is interpolated between server frames); a server without NPCs would never become the director (`run_net.py` refuses `--chars 0`); an interruption after the natural blend-out would never end the G ability (`bAllowInterruptAfterBlendOut`).
 - `simplify`, applied: the montage play / stop of an action became virtual on the character (G overrides it), so the configuration is decided once, by the class spawned; `BeginAction` / `InterruptAction` shared by server and client; the band derived, the per-character role removed (it is a parameter of each start); one `RecordFire` with an explicit-time form for held fires; the public `TriggerAbilityFromGameplayEvent` instead of the internal activation; the event tag declared once and used by the test; the client's actor tick switched off; net mode and config cached at begin play; the frame log built with one reserved string; a lost server ends a client with exit code 5; in the tools, the batch protocol (list parsing, run rotation, pinning, process kill, raw-file moves, log copy) moved into `run_bench.py` and is shared by `run_net.py`; one events pass for both clocks; one place for the window and workload switches; the server's log read incrementally while waiting. `run_bench`'s output is identical (checked on the S3 batches).

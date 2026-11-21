@@ -14,7 +14,7 @@
 
 ## Problem statement
 
-Hit windows, spawn points and ability commit points usually live in **anim notifies**, and a notify fires only in a frame in which its mesh's animation updates. Update-rate optimisation and the Animation Budget Allocator move such events by several frames, early as well as late, "only tick when rendered" stops them off-screen and on dedicated servers, a server advances a remote player's montage once per client move, and client-side position corrections can skip or repeat them. BranchingPoint notifies don't help: they are precise inside an update frame but don't create update frames. All of this was read in the 5.8.4 source and **measured before anything was built**: the single-process effects in step S3 (below, with two the source reading had not predicted), the network ones in S4. Details: [Explanation/01_Problem_Analysis.md](Explanation/01_Problem_Analysis.md) and [01b_Research_Findings.md](Explanation/01b_Research_Findings.md).
+Hit windows, spawn points and ability commit points usually live in **anim notifies**, and a notify fires only in a frame in which its mesh's animation updates. Update-rate optimisation and the Animation Budget Allocator move such events by several frames, early as well as late, "only tick when rendered" stops them off-screen and on dedicated servers, a server advances a remote player's montage once per client move, and client-side position corrections can skip or repeat them. BranchingPoint notifies don't help: they are precise inside an update frame but don't create update frames. All of this was read in the 5.8.4 source and **measured before anything was built**: the single-process effects in step S3 and the network ones in S4 (below, with three the source reading had not predicted). Details: [Explanation/01_Problem_Analysis.md](Explanation/01_Problem_Analysis.md) and [01b_Research_Findings.md](Explanation/01b_Research_Findings.md).
 
 **What Phase 2 changed in this statement:**
 - The effects are **conditional**: with engine defaults a montage notify is within one frame of its time. The project measures them under the settings large projects enable, and claims nothing for a condition the baselines don't fail (the "problem gate", `01` §6.4).
@@ -63,7 +63,18 @@ BranchingPoint notifies, `a.EnableQueuedAnimEventsOnServer` (and 5.8's new `a.No
 | `OnlyTickPoseWhenRendered` | **off-screen: nothing fires**; far, small meshes: 24% lost | the same | nothing lost | **problem** |
 | Start order (montage started before vs after the mesh's tick) | moves every event by up to one frame (early vs late) | the same | unaffected | a definition issue, not a failure |
 
-**What this means for the claims.** On the authority, a timer started with the action is already within one frame in every condition, so the single-process target for AnimEventClock (SC1) is **not** "more accurate than timers": it is timer-grade timing while the events stay authored in the montage, with play rate, sections and interruption handled in one place, and (S7) replicated. The notify failures above are what it will be measured against in Phase 8; nothing is claimed for it yet. Network baselines (S4) are next.
+**What this means for the claims.** On the authority, a timer started with the action is already within one frame in every condition, so the single-process target for AnimEventClock (SC1) is **not** "more accurate than timers": it is timer-grade timing while the events stay authored in the montage, with play rate, sections and interruption handled in one place, and (S7) replicated. The notify failures above are what it will be measured against in Phase 8; nothing is claimed for it yet.
+
+**Network baselines (S4, M2):** dedicated server (30 Hz) and listen server, one client at 60 fps, 16 NPCs + 1 remote player, real time with 0 / 100 / 200 ms (+ jitter) added round trip, 2 runs per combination, 40 runs. Full tables: [09 S4](Explanation/09_Testing_And_Benchmarks.md).
+
+| Role | Queued notifies (NQ) | GAS montage replication (G) | Timers (T) | Gate |
+|---|---|---|---|---|
+| Server, NPCs, defaults | instants ≤ 1 server frame; **window ends 2 frames late** (66 ms at 30 Hz) | the same | ≤ 1 frame | **problem (ends)** |
+| Server, the remote player's character | **up to 2 frames early** (−62 ms), up to 1.7 late | the same | ≤ 1 frame | **problem** |
+| Server, URO / `OnlyTickPoseWhenRendered` | 3 frames early to 4 late / **every notify lost** | the same | ≤ 1 frame | **problem** |
+| Client (simulated proxies) | late by the one-way delay + up to 2 frames (p99 83 ms at 100 ms round trip, 149 ms at 200) | the same, plus **7–140 duplicate events per 1,000** at every latency | as late (started by the same message) | **problem** |
+
+Nothing was missed at defaults on any role. **UE-308913** (repeated notify-state begin/end on servers, reported in 5.6.1): **not reproduced on 5.8.4**, 0 repeats in about 5,000 server windows, including the remote player's (`09` S4-c).
 
 ## Recorded demonstration
 
