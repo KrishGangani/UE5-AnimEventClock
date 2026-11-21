@@ -8,6 +8,7 @@
 | B | S1 (markers + demo assets) | `AECEventTypes`, `AECEventNotify`, `AECEventWindowNotifyState` (plugin); `AECDemoMontages` (game); `AECMakeDemoAssetsCommandlet` (game editor); `AECDemoMontageTests`; `Tools\make_assets.bat`, `run_tests.bat` |
 | C | S2 (workload + harness, baseline paths only) | `AECDemoCharacter`, `AECBenchSubsystem` (game); `Tools\event_stats.py`, `run_bench.py` |
 | D | S3 (the M1 baselines and the gate) | `AECBenchSubsystem` (`PrepareCondition`: `rme`, the budget allocator's second switch); `Tools\event_stats.py` (one shared metric with event-class buckets), `run_bench.py` (the gate, the no-op warning, `--summarize`) |
+| E | S4 (network harness, baselines G and the network roles) | `AECDemoCharacter` (replication, RPCs, the player character), `AECDemoGasCharacter`, `AECDemoAttackAbility`, `AECDemoGameMode`, `AECDemoPlayerController`, `AECBenchSubsystem` (server director, client recorder, frame log), `AECNetSetupTests`, `AnimEventClock.Build.cs`; `Tools\event_stats.py` (network analysis), `run_net.py` |
 
 ---
 
@@ -401,4 +402,85 @@ Two changes, both described in C3 (`PrepareCondition`): the `rme` control (root 
 - `gate_lines(groups)`: the gate table in every batch summary, per (condition, fps, config, path) and event class: the median across runs of each run's `abs_p99_frames` [min–max], min and max in frames, missed and duplicates summed over the runs, and the verdict (**problem** if p99 > 1 frame + 0.001 frame, or anything missed or duplicated; the 0.001 frame covers the CSV files' 1 µs resolution). Runs without a fixed step are skipped (no frame length).
 - The **no-op warning**: any condition whose fire hash equals the default condition's at the same frame rate and config is flagged "it changed nothing". This is the check that found the budget mistake by hand; now every batch makes it (altitude finding).
 - `--summarize <batch>`: re-reads the batch's manifest and raw CSV files, re-analyses every run with the current `event_stats.py` and rewrites only that batch's summary. The raw files and the manifest are never touched (`Benchmarks\README.md`). The S3 summaries were regenerated this way after the gate was added.
+
+---
+
+## Part E · S4: the network harness
+
+The idea in one paragraph: the same director and the same seeded schedule run on the **server** (listen or dedicated). The server waits for its remote player, gives that player a demo character of its own, and multicasts every action start and stop with the action's id. A **client** started with `-AECClient` does not direct anything: it records the fires of every replicated character against the server's ids, and plays NQ/NB montages and T timers when a start arrives (G montages arrive through GAS). Every process of a network run also logs, once per frame, its game time and the wall-clock moment that game time stands for, so the analysis can put the server's due times and every process's fires on one clock (raw notes E0).
+
+### E1. `AECDemoCharacter.h/.cpp`: replication, the two multicasts, the player character
+
+| Part | What it does, and why |
+|---|---|
+| `bAlwaysRelevant = true` | Relevancy could destroy a character on the client mid-run, and its fires would vanish with it (`06` §27). No effect standalone |
+| `UPROPERTY(Replicated) BenchIndex`, `bPlayerCharacter`, `COND_InitialOnly` | Set by the director before `FinishSpawning`, never changed, so the first bunch carries them, and a client has them by its `BeginPlay` (`06` §27). The client needs the index to keep one state array with the server's numbering |
+| `MulticastStartAction(ActionId, MontageIndex, PlayRate)`, `MulticastStopAction(ActionId)` | Reliable multicasts (`06` §28). Their bodies return on the server (a multicast runs there too) and otherwise hand the message to the client's director. The montage index is a `uint8`: two demo montages |
+| `BeginPlay`, player character | `DefaultLandMovementMode` **and** the current mode become `MOVE_Flying`: the client keeps sending moves, the server ticks the pose from them (the role being measured), and possession's restart cannot reset the mode (`06` §32). NPCs keep `DisableMovement` |
+| `BeginPlay`, on a client | `RegisterReplicatedCharacter` puts the character into the recorder's arrays at its bench index, and the actor tick is switched off (it only runs "pre" starts, which only a server makes; efficiency finding) |
+| `PlayActionMontage` / `StopActionMontage` (virtual) | How *this machine* plays and stops an action's montage: `Montage_Play` / `Montage_Stop`. Baseline G's character overrides both, so the character class chosen at spawn is the only place the configuration is decided (altitude finding; before, the director tested "G" in three places) |
+| `ClientBench` | One helper for "the client's director, or nothing on the server" used by `BeginPlay` and both multicasts |
+
+### E2. `AECDemoGasCharacter.h/.cpp` (baseline G)
+
+A subclass with a replicated `UAbilitySystemComponent`, so the NQ/NB/T runs keep a character without GAS. `BeginPlay` (server) gives it the attack ability. `PossessedBy` (server) and `OnRep_Controller` (owning client) initialise the ability actor info again, so it knows the player controller (it initialised itself with owner = avatar at component start, `06` §33). `PlayActionMontage(Montage, Rate)` (the override): on the server it builds the event data (the montage in `OptionalObject`, the rate in `EventMagnitude`) and calls the public `TriggerAbilityFromGameplayEvent` with the tag `AEC.Demo.Action`, which stamps the tag into the data and activates (reuse finding: it replaced a call to the `Internal…` function); it returns whether the ability activated. On a client it does nothing and returns true: GAS plays the montage there. `StopActionMontage` (server) stops the ability's montage with `CurrentMontageStop`; the ability ends, and GAS stops the montage on clients. The tag is declared in the header (`UE_DECLARE_GAMEPLAY_TAG_EXTERN`) so the automation test checks the same symbol. The tag is not decoration: the owning client runs a server-initiated activation with its event data only if the tag is valid (`06` §34, §35).
+
+### E3. `AECDemoAttackAbility.h/.cpp`
+
+Constructor: `InstancedPerExecution` (the engine default, stated) and `ServerInitiated` (`06` §34). `ActivateAbility` reads the montage and rate from the event data (the montage pointer is `const` there; `const_cast` because the task's API takes a mutable pointer and never changes the asset), ends the ability at once if either is missing or the commit fails, and otherwise starts `PlayMontageAndWait` with three handlers: completed and interrupted end the ability normally, cancelled ends it as cancelled. It does **not** end on blend-out: that would stop the montage early on the owning client, whose copy started later. The task is created with `bAllowInterruptAfterBlendOut = true`, so an interruption that comes after the natural blend-out began still reports `OnInterrupted` and the ability always ends (code-review finding; otherwise neither delegate fires).
+
+### E4. `AECDemoGameMode.h/.cpp`
+
+Player controller class `AAECDemoPlayerController`; no default pawn. `HandleStartingNewPlayer_Implementation` replaces the base version on purpose: a remote player goes to `UAECBenchSubsystem::AddRemotePlayer`; a local player (the listen-server host) gets nothing and watches through the director's camera (`06` §29). It is used only through `?game=` in network runs.
+
+### E5. `AECDemoPlayerController.h/.cpp`
+
+`bAutoManageActiveCameraTarget = false` (possession must not move the view). `ClientBenchFinished` (Client, Reliable): the server's "the run is over"; the body calls the client director's `FinishClientRun`. S7 adds the clock-sync component here.
+
+### E6. `AECBenchSubsystem.h/.cpp`: one director, three roles
+
+| Part | What it does, and why |
+|---|---|
+| `-AECPlayers`, `-AECClient`, `-AECConfig=G` | New switches (header comment). `G` loads the Queued montages and spawns `AAECDemoGasCharacter` |
+| `OnWorldBeginPlay` | Decides the world's role: **recorder** = `-AECClient` and a client world; **director** = not a client, not `-AECClient`, `-AECChars` > 0 (`06` §30). A recorder records with the default condition only (v1); a director with `-AECPlayers` needs the demo game mode. The camera is not spawned on a dedicated server (nobody looks). Network worlds reserve the frame log. Then: recorder → `Recording`; director with players → `WaitingForPlayers` (and the "Waiting for N remote player(s)" line the runner waits for); otherwise `BeginWarmUp` at once, as before |
+| `bNetworked`, `bGas` | The net mode and the G config, fixed at begin play and read every frame and every action (efficiency finding) |
+| `SpawnCharacter` | One spawn for NPCs and players: class by config, index = array size, the same deferred mesh settings as S2, then a state with its band (`BandOf`, the same rule the client uses) and its own random stream. `SpawnCharacters` loops it for the NPCs |
+| `ReserveRecords(MaxCharacters)` | The S2 reservation, now shared: the director reserves for NPCs + players, and so does a recorder, from the same switches (`run_net.py` passes `-AECChars`, `-AECPlayers`, `-AECWarmup`, `-AECCapture` to the client too) |
+| `AddRemotePlayer` | Spawns a character in band 3 (in front of the camera, nearer than band 0, one metre apart per player), possesses it, counts the player; plans its first action at once if the warm-up already started (otherwise `BeginWarmUp` plans everyone) |
+| `BeginWarmUp` | Plans every character's first action and starts the warm-up clock. Standalone it runs at begin play with the begin-play time, so standalone runs draw exactly the same random numbers as before (S4 regression check: the same hashes) |
+| `BeginAction` / `InterruptAction` | What starting and interrupting an action means on **any** machine, written once (simplification finding): the record (id = the server's index, character, montage, **role**, rate, start times, frame, in-capture), the character's `PlayActionMontage`, the timer path; and the stop time, `StopActionMontage`, the timer path's stop. The role is a parameter: on the server it follows from the character (player or NPC), on a client from its net role when the start arrives |
+| `StartAction` / `StopAction` (server) | `BeginAction` / `InterruptAction`, plus the multicast with the action id in network runs |
+| `StartTimerPath` / `StopTimerPath` | The T path, moved out of `StartAction`/`StopAction` so the client runs the same code when a start or stop arrives |
+| `RegisterReplicatedCharacter`, `HandleServerStart`, `HandleServerStop` (client) | Grow the arrays to the bench index; record the start with the role read at that moment (`ROLE_AutonomousProxy` → auto, else sim), play (NQ/NB) and start the timers, then attribute the character's **held fires** (below) to the new action with their own times; a stop is applied only if it names the action the client is playing |
+| `FindKey`, `LastFireTime`, held fires (G client) | In G a simulated proxy's montage comes through GAS's replicated property, which can arrive before the start message. A G client's fire that comes after its character's current action is over (its end, or stop + blend-out, plus 0.25 s for late Queued ends) is therefore **held** and given to the next action, with the times it fired at, when that start arrives; fires never claimed count as unattributed. The next action starts at least 0.5 s after the previous one ended, so the grace never takes a fire from it (code-review finding). NQ/NB clients start the montage on the start message, so they have no such race and no hold (altitude finding). A deeper fix, pairing each montage start with its start message, was considered and not taken: GAS's simulated-proxy restarts would be counted as new starts |
+| `RecordFire` (two forms) | "Now" (and counted in this frame's CSV stat), or with given times (a held fire): one place builds a fire record |
+| `HandleNetworkFailure` (client) | Bound to the engine's network-failure event: a client that loses its server before the run ended logs an error and quits with exit code 5, instead of travelling to the default map and waiting for the runner's timeout (altitude finding) |
+| `FinishClientRun` | The server's end message: write the files, finish, quit |
+| `Tick` | Done → quit (a server not before `ExitNotBefore`); network runs log (frame, game time, `FrameStartWallSeconds`) every frame (`06` §31); the view target is re-applied only for a **local** player controller (on a dedicated server the first controller is a remote client's); the director part moved to `TickDirector` |
+| `TickDirector` | Waiting for players (with a 120 s limit, then exit code 3), then the S2 phases. When the files are written on a server, every remote client is told and the server waits 3 s before quitting, so its clients quit first (a client whose server vanished would travel to the default map instead) |
+| `WriteRunFiles` | Header gains `net=` and `players=`; the actions file gains `role`; every `action` column holds the **server's** id; a client writes no expected file (the server's is the truth); network runs write `_frames.csv` |
+
+### E7. `AECNetSetupTests.cpp`: `AnimEventClock.Net.HarnessClassesConfigured`
+
+Checks, on the class defaults, the setup a network run depends on silently: the game mode's controller class and no default pawn; characters replicate and are always relevant; the GAS character's ability system replicates; the ability is server-initiated and instanced per execution; the native tag `AEC.Demo.Action` is registered.
+
+### E8. `AnimEventClock.Build.cs`
+
+`GameplayAbilities` becomes a **public** dependency (two public headers derive from its types); `GameplayTasks` and `GameplayTags` are private (only `.cpp` files call into them).
+
+### E9. `Tools\event_stats.py`: network runs
+
+| Part | What it does, and why |
+|---|---|
+| `load_run(prefix)` / `load_fires(events, in_capture, clock)` | `load_run` reads a run with an expected file once (header, actions in capture, due times, phases, events); `load_fires` builds the fire table on either clock. The server's events are read once and turned into both its game-time and its wall-clock table; a client's fires are built against the server's actions in capture (it has no expected file and no capture window of its own). Earlier drafts read the server twice (simplification and efficiency findings) |
+| `wall_mapper(frames)` | Server game time → wall clock, by linear interpolation in the server's frame log; correct even across a server hitch |
+| `frame_intervals(frames)` | Frame-to-frame wall-clock intervals of one process: shows a server below its 30 Hz cap. The server's frame log is read once for this and for the wall mapping |
+| `FIXED_BUCKETS`, one group table in `measure` | The bucket names that are not groups, defined once (the network summary picks roles by the roles it knows); each expected event's group is computed once |
+| `analyse_net(server, client)` | Server fires per role on its game time **and** on the wall clock; client fires per role on the wall clock, against the server's due times mapped to the wall clock. A character's client role comes from the client's own actions file; an action it never received is still expected ("unreceived") |
+| `measure`: unexpected per group | Fires of events that were not expected (a client still firing after the server's stop) are now also counted per band or role |
+| `selftest()` | Adds a hand-made network run: server game vs wall error, a remote player's window that begins twice (a window duplicate), a client miss, both client roles, and frame intervals |
+
+### E10. `Tools\run_net.py`
+
+One run = one server process + one client process, both started with `Popen` by a runner pinned to the performance cores (`05` A13), so both inherit the mask. The **server** is the editor binary with `-server` (dedicated, 30 Hz) or the packaged game with `?listen` (rendering, `t.MaxFPS`); both open `Template_Default` with `?game=` set to the demo game mode. The client is started only when the server's own log says it waits for its player; the runner then waits for the client, then the server, each with a timeout, and kills both trees in `finally`. Child output goes nowhere (the editor server would flood the queue log); each process writes its own `-abslog`. Latency is given as the **added round trip**: `-PktLag=<rtt/2>` on both processes, `j` adds `-PktLagVariance=10` (`06` §36). `--chars` must be at least 1 (a server without NPCs would never become the director). Files move to `Benchmarks\Raw\` as `<name>_srv_*` / `_cli_*`, never overwriting; `event_stats.analyse_net` analyses them; the manifest is rewritten after every run. The summary has three tables: wall-clock error per process, role and path (with a gate verdict against one frame of that process), the server's own fires in game time, and both processes' frame intervals. The batch protocol is **shared with `run_bench.py`**, not copied (reuse finding): `split_list`, `check_allowed`, `default_runs`, `rotated`, `batch_name`, `pin_batch` (keep awake, pin to the performance cores or refuse), `reset_game_user_settings`, `wait_or_none`, `kill_tree`, `move_run_files`, `copy_log`, the environment record and the summary cells all live in `run_bench.py`, whose own runs use the same functions (its manifests and summaries come out identical, checked on the S3 batches). The two rendering processes get their window switches from one `window_args`, and both processes their workload switches from one `sizing_args`. `wait_for_text` reads only what the server's log gained since its last look.
 

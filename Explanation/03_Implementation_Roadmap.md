@@ -11,7 +11,7 @@
 
 ---
 
-**Progress (2026-11-21):** Phase 4 ✅ (F1–F4). **S1 ✅**, **S2 ✅** (code review and simplify done; results in [09](09_Testing_And_Benchmarks.md)). **S3 ✅** (M1 captured, the gate applied, one harness mistake found and fixed, results in [09](09_Testing_And_Benchmarks.md) S3). Next: S4.
+**Progress (2026-11-21):** Phase 4 ✅ (F1–F4). **S1 ✅**, **S2 ✅** (code review and simplify done; results in [09](09_Testing_And_Benchmarks.md)). **S3 ✅** (M1 captured, the gate applied, one harness mistake found and fixed, results in [09](09_Testing_And_Benchmarks.md) S3). **S4**: the network harness is built and its smoke run passed (09 S4-a, S4-b); the M2 batch is queued.
 
 ## Owner decisions after the Phase 1–4 audit (2026-11-21)
 

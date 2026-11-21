@@ -143,3 +143,36 @@ Queue job `20261121_045524_9c2717` (build editor && game && `run_tests.bat AnimE
 **Why, as far as the source shows** (**[inferred]**; the measured facts are the rows above). With root motion from everything, the movement component ticks the pose itself every frame, even with movement disabled (`CharacterMovementComponent.cpp:2791–2799`), and that update runs immediately on the game thread (`AnimInstance.cpp:1028–1029`). Montage notifies queued by such an autonomous tick are applied only by a dispatch made during an autonomous tick (`AnimInstance.cpp:953–957`); `TickCharacterPose`'s own dispatch requires a pending graph update (`CharacterMovementComponent.cpp:12085–12111`, the condition at `:12091–12097`), which the immediate update has already finished (`AnimInstance.cpp:892`), so the queued instants reach a later dispatch that skips them. Why a non-rendered mesh keeps them was not traced; it is recorded as open (Phase 6 re-reads it, `11` lists an Anim Blueprint run).
 
 **Effect on the claims:** root motion from everything is a real, large failure mode for Queued notifies (H3's "lost events" belong to it, not to look-ahead), and look-ahead's drift is separate. Both enter the claims list. The budget allocator's forced throttling is a problem exactly like URO's.
+
+## Step S4 · Network harness, smoke and the M2 baselines (2026-11-21)
+
+### S4-a · Build, tests and a standalone regression
+
+Queue job `20261121_052421_922f53` (build editor && game && `run_tests.bat AnimEventClock` && package && `run_bench.py … --label s4regress` && `run_net.py … --label s4smoke`): **exit 0 in 562 s.**
+
+| # | Check | Result |
+|---|---|---|
+| S4-a1 | Editor and game targets build | ✅ 19.0 s and 21.9 s, **0 errors, 0 warnings** (the S4 code compiled on its first build, after code review and simplify) |
+| S4-a2 | Automation tests | ✅ `AnimEventClock.Assets.DemoMontagesMatchSpec` and the new **`AnimEventClock.Net.HarnessClassesConfigured`**: Success |
+| S4-a3 | Package | ✅ BUILD SUCCESSFUL, cook "Success - 0 error(s), 0 warning(s)" |
+| S4-a4 | **Standalone behaviour unchanged** | ✅ Batch `2026-11-21_062044_s4regress` (NQ, NB, def, 60 fps, 20 s): NQ hash **`0x01067BAE`** in all three runs, NB **`0x415A67C0`**: the S2 re-check's hashes. The new character class split, the shared `BeginAction` and the net code change nothing in a single-process run |
+
+### S4-b · Network smoke (8 runs, one per combination, 20 s capture)
+
+Batch `2026-11-21_062153_s4smoke` ([summary](../Benchmarks/Summaries/2026-11-21_062153_s4smoke_summary.md)): dedicated (editor `-server`) and listen (packaged) server × NQ and G × 0 and 100 ms added round trip; 16 NPCs + 1 remote player; pinned.
+
+| # | Check | Result |
+|---|---|---|
+| S4-b1 | Every run starts, connects, finishes and writes both processes' files | ✅ 8 of 8: server and client exit 0 in 40–47 s; the dedicated server is ready in 8.5–9.1 s, the listen server in 2.0 s; **53 of 53 actions received** by the client in every run; 0 log errors; **0 unattributed fires** on either side |
+| S4-b2 | The dedicated server holds 30 Hz | ✅ Frame interval median 33.3 ms, p99 34.3–34.4 ms in every run. Listen server and clients: 16.67 ms (the `t.MaxFPS 60` cap), with start-up hitches up to 2 s before the capture |
+| S4-b3 | Latency shows up where it should | ✅ Client error median about one-way delay + 20 ms: 2–6 ms at 0 ms, 58–75 ms at 100 ms round trip; the server's own fires do not move with latency |
+| S4-b4 | Log warnings | The editor server logs 21 engine warnings (`LogEditorDataStorageUI`, as in Phase 4). GAS runs add one per process: "No GameplayCueNotifyPaths were specified". Harmless (no cues exist); `DefaultGame.ini` sets the path after the M2 batch, so all M2 runs share one configuration (`07` S4) |
+
+**First readings (one run each, to be confirmed by M2):**
+- **G duplicates on simulated proxies, even at 0 ms.** In 3 of 4 G runs, 10–14 duplicate fires: every event of one attack fires a second time, in one frame, at 6.017 s, the moment the montage begins its natural blend-out. Read in the source: once the simulated proxy's local montage is blending out it counts as stopped, while the server's replicated info still says "playing"; GAS then **restarts** the montage (`AbilitySystem.AllowSimulatedMontageRestart`, default on, `AbilitySystemComponent_Abilities.cpp:55, 3327–3335`) and, finding the restarted copy more than 0.1 s behind the replicated position, **jumps it forward firing every notify in between** (`:3418–3446`). This is H6's "corrections cause duplicates", in a form the Phase 2 reading did not predict.
+- **The remote player's events fire early on the server** (median −9 to −11 ms, as early as −35 ms, in server game time), while NPCs on the same server are 0–2 frames late: the server advances that character's pose by the client's moves (H5).
+
+**Audit trail for S4 (before its first build):**
+- `code-review` (medium), 5 findings, all fixed: in G, a simulated proxy's fires could go to the previous action when GAS's montage property arrives before the start message (now held and given to the next action; G clients only); the recorder did not reserve its arrays (it now sizes them from the same switches as the server); the summary described the due moment wrongly (it is interpolated between server frames); a server without NPCs would never become the director (`run_net.py` refuses `--chars 0`); an interruption after the natural blend-out would never end the G ability (`bAllowInterruptAfterBlendOut`).
+- `simplify`, applied: the montage play / stop of an action became virtual on the character (G overrides it), so the configuration is decided once, by the class spawned; `BeginAction` / `InterruptAction` shared by server and client; the band derived, the per-character role removed (it is a parameter of each start); one `RecordFire` with an explicit-time form for held fires; the public `TriggerAbilityFromGameplayEvent` instead of the internal activation; the event tag declared once and used by the test; the client's actor tick switched off; net mode and config cached at begin play; the frame log built with one reserved string; a lost server ends a client with exit code 5; in the tools, the batch protocol (list parsing, run rotation, pinning, process kill, raw-file moves, log copy) moved into `run_bench.py` and is shared by `run_net.py`; one events pass for both clocks; one place for the window and workload switches; the server's log read incrementally while waiting. `run_bench`'s output is identical (checked on the S3 batches).
+- `simplify`, skipped on purpose: pairing each montage start with its start message instead of a time window (GAS's own simulated-proxy restarts would be counted as starts); replicating the server's config to clients (the runner always passes the same one, and a mismatch shows as unattributed fires); waiting for every client to disconnect instead of a fixed 3 s (the client now quits on its own if the server goes first); `K2_EndAbility` for the normal end (the explicit call states what is replicated).

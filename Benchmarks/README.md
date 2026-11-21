@@ -26,8 +26,8 @@ Every number in this project's write-up must trace back to a file in this folder
 
 - `<Config>`: `NQ` Queued notifies · `NB` BranchingPoint notifies · `T` timers · `G` GAS · `AEC` AnimEventClock (in single-process runs T and AEC are recorded inside the NQ/NB runs, `01` §6.2).
 - `<Condition>` (as implemented in S2–S3, `-AECCond`): `def` defaults · `uro` URO at the engine's own rates · `uro2` / `uro4` forced URO rate · `la4` look-ahead (root motion from everything + URO rate 4) · `rme` root motion from everything without URO (the S3 control) · `aba2` / `aba4` forced budget rate · `vis` `OnlyTickPoseWhenRendered`. The behind-camera band is the "not rendered" case inside every run. The start order is not part of the name: a batch with `--start pre` says so in its label (`m1_pre`) and its manifest. The off-screen budget cap is a Phase 8 item.
-- `<Rate>`: `f30` / `f60` / `f144` (fixed step) for single-process runs; `l0` / `l100` / `l200` (added round trip in ms, `j` suffix for jitter) for network runs.
-- `<role>` (network runs): `srv`, `cli1`, …
+- `<Rate>`: `f30` / `f60` / `f144` (fixed step) for single-process runs; network runs name the added round trip instead (below).
+- Network runs (`run_net.py`): `<batch>_<server>_<Config>_<cond>_rtt<round trip ms>[j]_r<run>_srv_*.csv` / `_cli_*.csv` / `.log`, where `<server>` is `dedicated` or `listen` and `j` marks the jitter variant; the server writes `actions`, `expected`, `events`, `frames`, the client `actions`, `events`, `frames`.
 - Example: `2026-12-01_101500_m1_NQ_uro4_f60_r1_events.csv`, with `2026-12-01_101500_m1_manifest.json` in `Raw\` and `2026-12-01_101500_m1_summary.md` in `Summaries\`.
 - `_r0_prime` files are the discarded priming run. They are kept for transparency and excluded from every summary.
 
@@ -58,5 +58,7 @@ Command line:      exact, per run, in the manifest
 | `2026-11-21_045238_m1_pre` | NQ, NB (+T) | def at 60 fps, start order "pre" | 4 + 1 | M1, H8 (S3) | [summary](Summaries/2026-11-21_045238_m1_pre_summary.md) |
 | `2026-11-21_051003_m1_fix` | NQ, NB (+T) | def, aba2, aba4, rme at 60 fps | 16 + 1 | M1 after the budget fix, plus the `rme` control (S3-f) | [summary](Summaries/2026-11-21_051003_m1_fix_summary.md) |
 | `2026-11-21_051748_m1_fixfps` | NQ, NB (+T) | aba4 at 30 and 144 fps | 8 + 1 | M1 after the budget fix (S3-f) | [summary](Summaries/2026-11-21_051748_m1_fixfps_summary.md) |
+| `2026-11-21_062044_s4regress` | NQ, NB (+T) | def, 60 fps, 20 s | 4 + 1 | S4: standalone behaviour unchanged (same hashes as S2) | [summary](Summaries/2026-11-21_062044_s4regress_summary.md) |
+| `2026-11-21_062153_s4smoke` | NQ, G (+T) | dedicated and listen server, 0 and 100 ms round trip, 20 s | 8 | S4 network smoke | [summary](Summaries/2026-11-21_062153_s4smoke_summary.md) |
 
 \* Invalid: the budget allocator was never enabled (`09` S3-b); these runs equal `def` and are kept only as the record of the mistake. Re-measured in `m1_fix` / `m1_fixfps`.

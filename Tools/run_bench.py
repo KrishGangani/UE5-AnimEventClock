@@ -51,7 +51,8 @@ EXE = os.path.join(BUILD_DIR, "AnimEventClock", "Binaries", "Win64", "AnimEventC
 SAVED = os.path.join(BUILD_DIR, "AnimEventClock", "Saved")
 RAW_DIR = event_stats.RAW_DIR
 SUMMARY_DIR = os.path.join(PROJECT_DIR, "Benchmarks", "Summaries")
-ENGINE_BUILD_VERSION = r"C:\Program Files\Epic Games\UE_5.8\Engine\Build\Build.version"
+ENGINE_DIR = r"C:\Program Files\Epic Games\UE_5.8\Engine"
+ENGINE_BUILD_VERSION = os.path.join(ENGINE_DIR, "Build", "Build.version")
 STARTUP_MARGIN_SECONDS = 180.0
 RUN_FILES = ("actions", "expected", "events")
 
@@ -92,6 +93,93 @@ def refuse_overwrite(path: str) -> str:
     return path
 
 
+# ---- The batch protocol, shared with run_net.py (one copy of each rule) ----
+
+def split_list(text: str) -> list[str]:
+    return [value.strip() for value in text.split(",") if value.strip()]
+
+
+def check_allowed(parser, what: str, values: list[str], allowed: tuple) -> None:
+    unknown = [v for v in values if v not in allowed]
+    if unknown:
+        parser.error(f"unknown {what}(s) {unknown}; available: {allowed}")
+
+
+def default_runs(args, configs: list[str]) -> None:
+    """Runs per combination: by default the number of configs, so every config sits in every order position once."""
+    if args.runs <= 0:
+        args.runs = len(configs)
+    elif args.runs % len(configs):
+        print(f"WARNING: --runs {args.runs} is not a multiple of {len(configs)} configs; the rotation is unbalanced")
+
+
+def rotated(configs: list[str], run_index: int) -> list[str]:
+    """Interleaving: the config order rotates every round."""
+    rotation = (run_index - 1) % len(configs)
+    return configs[rotation:] + configs[:rotation]
+
+
+def batch_name(label: str) -> str:
+    return dt.datetime.now().strftime("%Y-%m-%d_%H%M%S") + (f"_{label}" if label else "")
+
+
+def pin_batch(parser) -> None:
+    """Keeps the machine awake and pins this process to the performance cores, before anything is recorded or launched.
+    Every process it starts inherits the mask. Refuses to measure without it."""
+    if cpu_affinity.KERNEL32 is None:
+        return
+    # ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED: an occluded or locked desktop can throttle a windowed game.
+    # Applies only while this process lives.
+    cpu_affinity.KERNEL32.SetThreadExecutionState(0x80000000 | 0x00000001 | 0x00000002)
+    mask = cpu_affinity.performance_core_mask()
+    if mask and not cpu_affinity.pin_self(mask):
+        parser.error(f"could not pin the batch to the performance cores (0x{mask:X}); refusing to measure without it")
+
+
+def reset_game_user_settings() -> None:
+    """GameUserSettings.ini can override VSync and frame caps: every run starts without it."""
+    settings = os.path.join(SAVED, "Config", "Windows", "GameUserSettings.ini")
+    if os.path.exists(settings):
+        os.remove(settings)
+
+
+def wait_or_none(process: subprocess.Popen, timeout: float) -> int | None:
+    """The exit code, or None on timeout."""
+    try:
+        return process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def kill_tree(process: subprocess.Popen | None) -> None:
+    """Never leave a process running into the next run (timeout, Ctrl+C or any other error)."""
+    if process is not None and process.poll() is None:
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True)
+
+
+def move_run_files(saved: str, tag: str, kinds: tuple[str, ...]) -> bool:
+    """Moves <saved>/AECRuns/<tag>_<kind>.csv into Benchmarks/Raw (never overwriting). True if all of them existed."""
+    os.makedirs(RAW_DIR, exist_ok=True)
+    present = True
+    for kind in kinds:
+        source = os.path.join(saved, "AECRuns", f"{tag}_{kind}.csv")
+        if os.path.exists(source):
+            shutil.move(source, refuse_overwrite(os.path.join(RAW_DIR, f"{tag}_{kind}.csv")))
+        else:
+            present = False
+    return present
+
+
+def copy_log(path: str, started: float, destination: str) -> dict:
+    """Error and warning counts of a log written by this run (never a stale one), and a copy in Benchmarks/Raw."""
+    if not os.path.exists(path) or os.path.getmtime(path) < started:
+        return {"log_missing": True}
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        text = handle.read()
+    shutil.copy(path, refuse_overwrite(os.path.join(RAW_DIR, destination)))
+    return {"log_errors": text.count("Error:"), "log_warnings": text.count("Warning:")}
+
+
 def launch(name: str, config: str, cond: str, fps: int, args) -> tuple[str, int | None, float, float]:
     """Starts one run and waits for it. Returns (command, exit code or None on timeout, start time, wall seconds)."""
     command = (f'"{EXE}" -windowed -ResX=1280 -ResY=720 -nosound -unattended -traceautostart=0 -deterministic -FPS={fps} -novsync '
@@ -101,49 +189,27 @@ def launch(name: str, config: str, cond: str, fps: int, args) -> tuple[str, int 
         print("DRY:", command)
         return command, 0, time.time(), 0.0
 
-    settings = os.path.join(SAVED, "Config", "Windows", "GameUserSettings.ini")
-    if os.path.exists(settings):
-        os.remove(settings)
+    reset_game_user_settings()
     started = time.time()
-    process = subprocess.Popen(command)   # inherits this process's CPU affinity (main: pin_self)
+    process = subprocess.Popen(command)   # inherits this process's CPU affinity (main: pin_batch)
     try:
         # Fixed step runs faster than real time, so warm-up + capture is a generous bound; the margin covers start-up.
-        exit_code = process.wait(timeout=args.warmup + args.capture + STARTUP_MARGIN_SECONDS)
-    except subprocess.TimeoutExpired:
-        exit_code = None
+        exit_code = wait_or_none(process, args.warmup + args.capture + STARTUP_MARGIN_SECONDS)
     finally:
-        if process.poll() is None:   # timeout, Ctrl+C or any other error: never leave a game running into the next run
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True)
+        kill_tree(process)
     return command, exit_code, started, time.time() - started
 
 
 def collect(name: str, started: float) -> dict:
     """Moves this run's artefacts into Benchmarks/Raw and analyses them."""
-    record: dict = {}
-    os.makedirs(RAW_DIR, exist_ok=True)
-    present = True
-    for kind in RUN_FILES:
-        source = os.path.join(SAVED, "AECRuns", f"{name}_{kind}.csv")
-        if os.path.exists(source):
-            shutil.move(source, refuse_overwrite(os.path.join(RAW_DIR, f"{name}_{kind}.csv")))
-        else:
-            present = False
-    record["run_files"] = present
-    if present:
+    record: dict = {"run_files": move_run_files(SAVED, name, RUN_FILES)}
+    if record["run_files"]:
         try:
             record["stats"] = event_stats.analyse(os.path.join(RAW_DIR, name))
         except (ValueError, KeyError, IndexError) as error:
             record["analysis_error"] = str(error)
 
-    log = os.path.join(SAVED, "Logs", "AnimEventClock.log")
-    if os.path.exists(log) and os.path.getmtime(log) >= started:   # only this run's log, never a stale one
-        with open(log, encoding="utf-8", errors="replace") as handle:
-            text = handle.read()
-        record["log_errors"] = text.count("Error:")
-        record["log_warnings"] = text.count("Warning:")
-        shutil.copy(log, refuse_overwrite(os.path.join(RAW_DIR, name + ".log")))
-    else:
-        record["log_missing"] = True
+    record.update(copy_log(os.path.join(SAVED, "Logs", "AnimEventClock.log"), started, name + ".log"))
     return record
 
 
@@ -254,29 +320,17 @@ def main(argv: list[str]) -> int:
         print("summary:", write_summary(args.summarize, manifest["environment"], manifest["runs"]))
         return 0
 
-    configs = [c.strip() for c in args.configs.split(",") if c.strip()]
-    conds = [c.strip() for c in args.conds.split(",") if c.strip()]
-    rates = [int(f) for f in args.fps.split(",") if f.strip()]
-    for name, values, allowed in (("config", configs, CONFIGS), ("condition", conds, CONDITIONS)):
-        unknown = [v for v in values if v not in allowed]
-        if unknown:
-            parser.error(f"unknown {name}(s) {unknown}; available: {allowed}")
-    if args.runs <= 0:
-        args.runs = len(configs)
-    elif args.runs % len(configs):
-        print(f"WARNING: --runs {args.runs} is not a multiple of {len(configs)} configs; the rotation is unbalanced")
+    configs, conds = split_list(args.configs), split_list(args.conds)
+    rates = [int(f) for f in split_list(args.fps)]
+    check_allowed(parser, "config", configs, CONFIGS)
+    check_allowed(parser, "condition", conds, CONDITIONS)
+    default_runs(args, configs)
     if not os.path.exists(EXE) and not args.dry_run:
         parser.error(f"packaged build not found: {EXE} (run Tools\\package.bat first)")
+    if not args.dry_run:
+        pin_batch(parser)
 
-    if not args.dry_run and cpu_affinity.KERNEL32 is not None:
-        # Keep the display and system awake while the batch runs (ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED):
-        # an occluded or locked desktop can throttle a windowed game. Applies only while this process lives.
-        cpu_affinity.KERNEL32.SetThreadExecutionState(0x80000000 | 0x00000001 | 0x00000002)
-        mask = cpu_affinity.performance_core_mask()
-        if mask and not cpu_affinity.pin_self(mask):
-            parser.error(f"could not pin the batch to the performance cores (0x{mask:X}); refusing to measure without it")
-
-    batch = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S") + (f"_{args.label}" if args.label else "")
+    batch = batch_name(args.label)
     environment = environment_record() if not args.dry_run else {}
     environment.update({"chars": args.chars, "seed": args.seed, "warmup": args.warmup, "capture": args.capture, "start": args.start})
     records: list[dict] = []
@@ -302,11 +356,9 @@ def main(argv: list[str]) -> int:
         run(configs[0], conds[0], rates[0], 0, priming=True)
 
     for run_index in range(1, args.runs + 1):
-        rotation = (run_index - 1) % len(configs)
-        round_configs = configs[rotation:] + configs[:rotation]       # interleave: rotate the order every round
         for cond in conds:
             for fps in rates:
-                for config in round_configs:
+                for config in rotated(configs, run_index):
                     run(config, cond, fps, run_index)
 
     if args.dry_run:

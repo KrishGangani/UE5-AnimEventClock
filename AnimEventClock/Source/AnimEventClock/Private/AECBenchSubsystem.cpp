@@ -3,13 +3,17 @@
 #include "AECBenchSubsystem.h"
 
 #include "AECDemoCharacter.h"
+#include "AECDemoGameMode.h"
+#include "AECDemoGasCharacter.h"
 #include "AECDemoMontages.h"
+#include "AECDemoPlayerController.h"
 #include "AECEventNotify.h"
 #include "AECEventWindowNotifyState.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraActor.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
@@ -45,6 +49,14 @@ namespace AECBench
 	struct FBandBox { double MinX, MaxX, HalfY; };
 	constexpr FBandBox Bands[3] = { { 400.0, 900.0, 300.0 }, { 4000.0, 7000.0, 1500.0 }, { -1200.0, -400.0, 300.0 } };
 
+	/** Remote players' characters: band 3, in front of the camera and nearer than band 0, one metre apart. */
+	constexpr int32 PlayerBand = 3;
+	const FVector PlayerLocation(300.0, 0.0, CharacterHeight);
+	constexpr double PlayerSpacing = 100.0;
+
+	/** The band of character Index: NPCs take turns across the three bands; players have their own. */
+	int32 BandOf(int32 Index, bool bPlayer) { return bPlayer ? PlayerBand : Index % 3; }
+
 	/** The schedule (01 §6.1): wait between actions, the montage mix, play rates, how often and where an action is cut. */
 	constexpr float MinWaitSeconds = 0.5f;
 	constexpr float MaxWaitSeconds = 1.5f;
@@ -59,9 +71,21 @@ namespace AECBench
 	constexpr double DrainGraceSeconds = 1.0;
 	constexpr int32 ExitDelayFrames = 3;
 
-	/** Exit codes: the run could not be set up (missing montage, unknown condition, a failed spawn); its files could not be written. */
+	/** Network runs: how long a server waits for its players; how long it outlives its clients at the end (so they quit
+	 *  first: a client whose server vanished would travel to the default map instead of quitting); frames reserved per
+	 *  second of run for the per-frame log (above any frame cap the runs use). */
+	constexpr double PlayerWaitSeconds = 120.0;
+	constexpr double ServerExitDelaySeconds = 3.0;
+	constexpr double FrameStampsPerSecond = 250.0;
+
+	/** Client: how long after its end (or stop + blend-out) an action may still fire (late Queued ends). */
+	constexpr double LateFireGraceSeconds = 0.25;
+
+	/** Exit codes: the run could not be set up (missing montage, unknown condition, a failed spawn, no player); its files
+	 *  could not be written; a client lost its server before the run ended. */
 	constexpr uint8 SetupFailedExitCode = 3;
 	constexpr uint8 WriteFailedExitCode = 4;
+	constexpr uint8 LostServerExitCode = 5;
 
 	/** The tag on every console variable a run sets, so Deinitialize can undo exactly those (PIE runs share a process). */
 	const FName ConsoleVariableTag(TEXT("AECBench"));
@@ -101,6 +125,8 @@ UAECBenchSubsystem::FRunSettings UAECBenchSubsystem::ReadRunSettings()
 	{
 		Read.bStartPre = (Start == TEXT("pre"));
 	}
+	FParse::Value(CommandLine, TEXT("AECPlayers="), Read.Players);
+	Read.bClient = FParse::Param(CommandLine, TEXT("AECClient"));
 	FParse::Value(CommandLine, TEXT("AECRunTag="), Read.RunTag);
 	Read.bExitWhenDone = FParse::Param(CommandLine, TEXT("AECExit"));
 	return Read;
@@ -112,22 +138,61 @@ double UAECBenchSubsystem::WallSeconds()
 	return FPlatformTime::ToSeconds64(FPlatformTime::Cycles64());
 }
 
+double UAECBenchSubsystem::FrameStartWallSeconds()
+{
+	// FApp::GetCurrentTime() is the FPlatformTime::Seconds() reading this frame's delta time was measured from
+	// (UnrealEngine.cpp:3127-3138, real time when no fixed step is used), so it is the moment this frame's game time
+	// stands for. FPlatformTime::Seconds() adds a constant to the raw counter (WindowsPlatformTime.h:29, 46-49; 0 on
+	// other platforms); taking it off puts the value on WallSeconds()'s base.
+	return FApp::GetCurrentTime() - FPlatformTime::GetSecondsTimeOffset();
+}
+
+const TCHAR* UAECBenchSubsystem::NetModeName() const
+{
+	switch (GetWorld()->GetNetMode())
+	{
+	case NM_ListenServer:    return TEXT("listen");
+	case NM_DedicatedServer: return TEXT("dedicated");
+	case NM_Client:          return TEXT("client");
+	default:                 return TEXT("standalone");
+	}
+}
+
 void UAECBenchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
 
 	Settings = ReadRunSettings();
-	if (Settings.NumCharacters <= 0)
+	const bool bClientWorld = (InWorld.GetNetMode() == NM_Client);
+	const bool bRecorder = Settings.bClient && bClientWorld;
+	const bool bDirector = !Settings.bClient && !bClientWorld && Settings.NumCharacters > 0;
+	if (!bRecorder && !bDirector)
 	{
-		return; // No workload requested: the world behaves like a normal empty map.
+		return; // No workload requested for this world (or a client's world before it connected): a normal empty map.
 	}
 
 	BeginPlayTime = InWorld.GetTimeSeconds();
 	BeginPlayFrame = GFrameCounter;
+	bNetworked = (InWorld.GetNetMode() != NM_Standalone);
+	bGas = (Settings.Config == TEXT("G"));
 
-	const bool bConfigKnown = (Settings.Config == TEXT("NQ") || Settings.Config == TEXT("NB"));
-	if (!bConfigKnown || !PrepareCondition() || !LoadMontages() || Settings.CaptureSeconds <= 0.0 || Settings.WarmupSeconds < 0.0
-		|| !SpawnCharacters(InWorld))
+	const bool bConfigKnown = (Settings.Config == TEXT("NQ") || Settings.Config == TEXT("NB") || Settings.Config == TEXT("G"));
+	bool bReady = bConfigKnown && PrepareCondition() && LoadMontages();
+	if (bRecorder && Settings.Condition != TEXT("def"))
+	{
+		UE_LOG(LogAECBench, Error, TEXT("A client records with the default condition only (v1); got -AECCond=%s."), *Settings.Condition);
+		bReady = false;
+	}
+	if (bDirector && Settings.Players > 0 && !Cast<AAECDemoGameMode>(InWorld.GetAuthGameMode()))
+	{
+		UE_LOG(LogAECBench, Error, TEXT("-AECPlayers needs the demo game mode: open the map with ?game=/Script/AnimEventClock.AECDemoGameMode."));
+		bReady = false;
+	}
+	if (bDirector)
+	{
+		bReady = bReady && Settings.CaptureSeconds > 0.0 && Settings.WarmupSeconds >= 0.0 && SpawnCharacters(InWorld);
+	}
+	if (!bReady)
 	{
 		UE_LOG(LogAECBench, Error, TEXT("Run not started: config %s, condition %s, warm-up %.2f s, capture %.2f s (see errors above)."),
 			*Settings.Config, *Settings.Condition, Settings.WarmupSeconds, Settings.CaptureSeconds);
@@ -137,12 +202,35 @@ void UAECBenchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	}
 
 	MarkerHookHandle = AnimEventClock::OnMarkerFiredByAnimation().AddUObject(this, &UAECBenchSubsystem::HandleMarkerFiredByAnimation);
-	Camera = InWorld.SpawnActor<ACameraActor>(AECBench::CameraLocation, FRotator::ZeroRotator);
-	Phase = ERunPhase::WarmUp;
+	if (InWorld.GetNetMode() != NM_DedicatedServer)
+	{
+		Camera = InWorld.SpawnActor<ACameraActor>(AECBench::CameraLocation, FRotator::ZeroRotator);
+	}
+	if (bNetworked)
+	{
+		FrameStamps.Reserve(FMath::CeilToInt32((AECBench::PlayerWaitSeconds + Settings.WarmupSeconds + Settings.CaptureSeconds + 30.0) * AECBench::FrameStampsPerSecond));
+	}
 
-	UE_LOG(LogAECBench, Display, TEXT("Run %s: %d characters, seed %d, config %s, condition %s, start %s, warm-up %.1f s, capture %.1f s, fixed step %s"),
+	if (bRecorder)
+	{
+		ReserveRecords(Settings.NumCharacters + Settings.Players);
+		NetworkFailureHandle = GEngine->OnNetworkFailure().AddUObject(this, &UAECBenchSubsystem::HandleNetworkFailure);
+		Phase = ERunPhase::Recording;
+		UE_LOG(LogAECBench, Display, TEXT("Client recorder %s: config %s"), *Settings.RunTag, *Settings.Config);
+	}
+	else if (Settings.Players > 0)
+	{
+		Phase = ERunPhase::WaitingForPlayers;
+		UE_LOG(LogAECBench, Display, TEXT("Waiting for %d remote player(s) (%s server)"), Settings.Players, NetModeName());
+	}
+	else
+	{
+		BeginWarmUp(BeginPlayTime);
+	}
+
+	UE_LOG(LogAECBench, Display, TEXT("Run %s: %d characters, seed %d, config %s, condition %s, start %s, warm-up %.1f s, capture %.1f s, fixed step %s, net %s"),
 		*Settings.RunTag, Characters.Num(), Settings.Seed, *Settings.Config, *Settings.Condition, AECBench::StartOrderName(Settings.bStartPre),
-		Settings.WarmupSeconds, Settings.CaptureSeconds, *AECBench::FixedStepText());
+		Settings.WarmupSeconds, Settings.CaptureSeconds, *AECBench::FixedStepText(), NetModeName());
 	CSV_METADATA(TEXT("AECRunTag"), *Settings.RunTag);
 	CSV_METADATA(TEXT("AECConfig"), *Settings.Config);
 	CSV_METADATA(TEXT("AECCond"), *Settings.Condition);
@@ -151,6 +239,10 @@ void UAECBenchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 void UAECBenchSubsystem::Deinitialize()
 {
 	AnimEventClock::OnMarkerFiredByAnimation().Remove(MarkerHookHandle);
+	if (GEngine)
+	{
+		GEngine->OnNetworkFailure().Remove(NetworkFailureHandle);
+	}
 	// Removes exactly the values this run set; whatever was there before (config, device profile) applies again.
 	IConsoleManager::Get().UnsetAllConsoleVariablesWithTag(AECBench::ConsoleVariableTag, ECVF_SetByTemp);
 	Super::Deinitialize();
@@ -233,7 +325,7 @@ bool UAECBenchSubsystem::PrepareCondition()
 
 bool UAECBenchSubsystem::LoadMontages()
 {
-	const bool bBranchingPoint = (Settings.Config == TEXT("NB"));
+	const bool bBranchingPoint = (Settings.Config == TEXT("NB"));   // G plays the Queued variant, like NQ
 	for (const AECDemo::FMontageSpec& Spec : AECDemo::GetMontageSpecs())
 	{
 		const FString Path = AECDemo::GetMontageObjectPath(Spec, bBranchingPoint);
@@ -284,67 +376,120 @@ bool UAECBenchSubsystem::LoadMontages()
 	return true;
 }
 
+AAECDemoCharacter* UAECBenchSubsystem::SpawnCharacter(UWorld& World, const FTransform& Transform, bool bPlayer)
+{
+	const int32 Index = Characters.Num();
+	const TSubclassOf<AAECDemoCharacter> Class = bGas ? AAECDemoGasCharacter::StaticClass() : AAECDemoCharacter::StaticClass();
+
+	// Deferred spawn: the mesh settings of the condition are in place before BeginPlay registers anything.
+	AAECDemoCharacter* Character = World.SpawnActorDeferred<AAECDemoCharacter>(Class, Transform, nullptr, nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Character)
+	{
+		UE_LOG(LogAECBench, Error, TEXT("Spawning character %d failed."), Index);
+		return nullptr;
+	}
+	Character->SetBenchIndex(Index);
+	Character->SetPlayerCharacter(bPlayer);
+	Character->PrimaryActorTick.bStartWithTickEnabled = Settings.bStartPre;   // its tick only runs "pre" starts
+	USkeletalMeshComponent* Mesh = Character->GetMesh();
+	Mesh->bEnableUpdateRateOptimizations = bUseUpdateRateOptimizations;
+	if (bOnlyTickWhenRendered)
+	{
+		Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+	}
+	if (bRegisterWithBudget)
+	{
+		CastChecked<USkeletalMeshComponentBudgeted>(Mesh)->SetAutoRegisterWithBudgetAllocator(true);
+	}
+	Character->FinishSpawning(Transform);
+
+	if (bRootMotionFromEverything)
+	{
+		if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
+		{
+			AnimInstance->RootMotionMode = ERootMotionMode::RootMotionFromEverything;
+		}
+	}
+
+	// Placement and schedule each get their own stream per character, so changing N or the schedule of one character
+	// never moves another (and the same seed always gives the same run).
+	Characters.Add(Character);
+	FCharacterState& State = States.AddDefaulted_GetRef();
+	State.Band = AECBench::BandOf(Index, bPlayer);
+	State.Random.Initialize(Settings.Seed * 104729 + Index);
+	return Character;
+}
+
 bool UAECBenchSubsystem::SpawnCharacters(UWorld& World)
 {
-	Characters.Reserve(Settings.NumCharacters);
-	States.SetNum(Settings.NumCharacters);
+	const int32 MaxCharacters = Settings.NumCharacters + Settings.Players;
+	Characters.Reserve(MaxCharacters);
+	States.Reserve(MaxCharacters);
 
 	for (int32 Index = 0; Index < Settings.NumCharacters; ++Index)
 	{
-		// Placement and schedule each get their own stream per character, so changing N or the schedule of one
-		// character never moves another (and the same seed always gives the same run).
 		FRandomStream Placement(Settings.Seed * 7919 + Index);
-		States[Index].Random.Initialize(Settings.Seed * 104729 + Index);
-
-		const int32 Band = Index % 3;
+		const int32 Band = AECBench::BandOf(Index, false);
 		const AECBench::FBandBox& Box = AECBench::Bands[Band];
 		const FVector Location(Placement.FRandRange(Box.MinX, Box.MaxX), Placement.FRandRange(-Box.HalfY, Box.HalfY), AECBench::CharacterHeight);
 		const FTransform Transform(FRotator(0.0, 180.0, 0.0), Location);   // facing the camera
-
-		// Deferred spawn: the mesh settings of the condition are in place before BeginPlay registers anything.
-		AAECDemoCharacter* Character = World.SpawnActorDeferred<AAECDemoCharacter>(AAECDemoCharacter::StaticClass(), Transform,
-			nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-		if (!Character)
+		if (!SpawnCharacter(World, Transform, false))
 		{
-			UE_LOG(LogAECBench, Error, TEXT("Spawning character %d failed."), Index);
 			return false;
 		}
-		Character->SetBenchIndex(Index);
-		Character->PrimaryActorTick.bStartWithTickEnabled = Settings.bStartPre;   // its tick only runs "pre" starts
-		USkeletalMeshComponent* Mesh = Character->GetMesh();
-		Mesh->bEnableUpdateRateOptimizations = bUseUpdateRateOptimizations;
-		if (bOnlyTickWhenRendered)
-		{
-			Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
-		}
-		if (bRegisterWithBudget)
-		{
-			CastChecked<USkeletalMeshComponentBudgeted>(Mesh)->SetAutoRegisterWithBudgetAllocator(true);
-		}
-		Character->FinishSpawning(Transform);
-
-		if (bRootMotionFromEverything)
-		{
-			if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
-			{
-				AnimInstance->RootMotionMode = ERootMotionMode::RootMotionFromEverything;
-			}
-		}
-
-		Characters.Add(Character);
-		States[Index].Band = Band;
-		PlanNextAction(Index, BeginPlayTime);
 	}
+	ReserveRecords(MaxCharacters);
+	return true;
+}
 
-	// Reserved up front, so the arrays never reallocate (and copy megabytes) inside a measured frame. An action takes at
-	// least the shortest montage at the fastest rate plus the shortest wait; each action records at most 2 fires per key.
+void UAECBenchSubsystem::ReserveRecords(int32 MaxCharacters)
+{
+	// An action takes at least the shortest montage at the fastest rate plus the shortest wait; each action records at
+	// most 2 fires per key.
 	const float ShortestLength = FMath::Min(MontageInfos[0].Length, MontageInfos.Last().Length);
 	const double ShortestCycle = AECBench::MinWaitSeconds + ShortestLength / AECBench::FastPlayRate;
 	const int32 MaxKeys = FMath::Max(MontageInfos[0].Keys.Num(), MontageInfos.Last().Keys.Num());
 	const int32 ActionsPerCharacter = FMath::CeilToInt32((Settings.WarmupSeconds + Settings.CaptureSeconds) / ShortestCycle) + 2;
-	Actions.Reserve(Settings.NumCharacters * ActionsPerCharacter);
-	Fires.Reserve(Settings.NumCharacters * ActionsPerCharacter * MaxKeys * 2);
-	return true;
+	Actions.Reserve(MaxCharacters * ActionsPerCharacter);
+	Fires.Reserve(MaxCharacters * ActionsPerCharacter * MaxKeys * 2);
+}
+
+void UAECBenchSubsystem::AddRemotePlayer(APlayerController& Player)
+{
+	if (Phase == ERunPhase::Idle || Phase == ERunPhase::Recording || Phase == ERunPhase::Done)
+	{
+		return;   // no workload in this world, or its setup failed
+	}
+
+	UWorld* World = GetWorld();
+	const FVector Location = AECBench::PlayerLocation + FVector(0.0, AECBench::PlayerSpacing * RemotePlayers, 0.0);
+	const FTransform Transform(FRotator(0.0, 180.0, 0.0), Location);
+	AAECDemoCharacter* Character = SpawnCharacter(*World, Transform, true);
+	if (!Character)
+	{
+		return;   // logged; the server keeps waiting and fails at its player timeout
+	}
+	Player.Possess(Character);
+	++RemotePlayers;
+
+	// A player who joins after the warm-up started gets its schedule now; before that, BeginWarmUp plans everyone.
+	const int32 Index = Characters.Num() - 1;
+	if (Phase == ERunPhase::WarmUp || Phase == ERunPhase::Capture)
+	{
+		PlanNextAction(Index, World->GetTimeSeconds());
+	}
+	UE_LOG(LogAECBench, Display, TEXT("Remote player %d joined at %.3f s: character %d"), RemotePlayers, World->GetTimeSeconds(), Index);
+}
+
+void UAECBenchSubsystem::BeginWarmUp(double Now)
+{
+	WarmupStartTime = Now;
+	for (int32 Index = 0; Index < States.Num(); ++Index)
+	{
+		PlanNextAction(Index, Now);
+	}
+	Phase = ERunPhase::WarmUp;
 }
 
 void UAECBenchSubsystem::PlanNextAction(int32 CharacterIndex, double Now)
@@ -378,45 +523,59 @@ void UAECBenchSubsystem::ExecuteRequestedStart(AAECDemoCharacter& Character)
 	}
 }
 
+int32 UAECBenchSubsystem::BeginAction(int32 CharacterIndex, int32 Id, int32 MontageIndex, float PlayRate, ERole Role)
+{
+	FAction& Action = Actions.AddDefaulted_GetRef();
+	const int32 ActionIndex = Actions.Num() - 1;
+	Action.Id = Id;
+	Action.Character = CharacterIndex;
+	Action.Montage = MontageIndex;
+	Action.Role = Role;
+	Action.PlayRate = PlayRate;
+	Action.StartGameTime = GetWorld()->GetTimeSeconds();
+	Action.StartWallTime = WallSeconds();
+	Action.StartFrame = RunFrame();
+	Action.bInCapture = (Phase == ERunPhase::Capture);
+	States[CharacterIndex].CurrentAction = ActionIndex;
+
+	AAECDemoCharacter* Character = Characters[CharacterIndex].Get();
+	if (!IsValid(Character) || !Character->PlayActionMontage(*Montages[MontageIndex], PlayRate))
+	{
+		UE_LOG(LogAECBench, Error, TEXT("Action %d: the montage did not start on character %d."), Id, CharacterIndex);
+	}
+	StartTimerPath(CharacterIndex, ActionIndex);
+	return ActionIndex;
+}
+
+void UAECBenchSubsystem::InterruptAction(int32 CharacterIndex, int32 ActionIndex)
+{
+	FAction& Action = Actions[ActionIndex];
+	Action.StopGameTime = GetWorld()->GetTimeSeconds();
+	if (AAECDemoCharacter* Character = Characters[CharacterIndex].Get(); IsValid(Character))
+	{
+		Character->StopActionMontage(*Montages[Action.Montage], AECBench::StopBlendOutSeconds);
+	}
+	StopTimerPath(CharacterIndex, ActionIndex);
+}
+
 void UAECBenchSubsystem::StartAction(int32 CharacterIndex)
 {
 	AAECDemoCharacter* Character = Characters.IsValidIndex(CharacterIndex) ? Characters[CharacterIndex].Get() : nullptr;
-	UAnimInstance* AnimInstance = IsValid(Character) ? Character->GetMesh()->GetAnimInstance() : nullptr;
-	if (!AnimInstance)
+	if (!IsValid(Character) || !Character->GetMesh()->GetAnimInstance())
 	{
 		return;
 	}
 
-	UWorld* World = GetWorld();
 	FCharacterState& State = States[CharacterIndex];
-	const FMontageInfo& Info = MontageInfos[State.PlannedMontage];
-
-	FAction& Action = Actions.AddDefaulted_GetRef();
-	const int32 ActionIndex = Actions.Num() - 1;
-	Action.Character = CharacterIndex;
-	Action.Montage = State.PlannedMontage;
-	Action.PlayRate = State.PlannedPlayRate;
-	Action.StartGameTime = World->GetTimeSeconds();
-	Action.StartWallTime = WallSeconds();
-	Action.StartFrame = RunFrame();
-	Action.bInCapture = (Phase == ERunPhase::Capture);
-
-	AnimInstance->Montage_Play(Montages[State.PlannedMontage], Action.PlayRate);
-
-	// The timer path: one timer per key, at the authored position divided by the play rate.
-	ClearTimers(State);
-	FTimerManager& Timers = World->GetTimerManager();
-	State.Timers.SetNum(Info.Keys.Num());
-	State.TimerWindowOpen.Init(false, Info.Keys.Num());
-	for (int32 Key = 0; Key < Info.Keys.Num(); ++Key)
+	const ERole Role = Character->IsPlayerCharacter() ? ERole::RemotePlayer : ERole::Npc;
+	const int32 ActionIndex = BeginAction(CharacterIndex, Actions.Num(), State.PlannedMontage, State.PlannedPlayRate, Role);
+	const FAction& Action = Actions[ActionIndex];
+	if (bNetworked)
 	{
-		const float Delay = Info.Keys[Key].Position / Action.PlayRate;
-		Timers.SetTimer(State.Timers[Key], FTimerDelegate::CreateUObject(this, &UAECBenchSubsystem::HandleTimerKey, CharacterIndex, ActionIndex, Key),
-			FMath::Max(Delay, UE_KINDA_SMALL_NUMBER), false);
+		Character->MulticastStartAction(Action.Id, static_cast<uint8>(Action.Montage), Action.PlayRate);
 	}
 
-	const double Duration = Info.Length / Action.PlayRate;
-	State.CurrentAction = ActionIndex;
+	const double Duration = MontageInfos[Action.Montage].Length / Action.PlayRate;
 	State.bPlaying = true;
 	State.PlannedEndTime = Action.StartGameTime + Duration;
 	State.PlannedStopTime = (State.PlannedStopFraction >= 0.0) ? Action.StartGameTime + State.PlannedStopFraction * Duration : -1.0;
@@ -424,25 +583,126 @@ void UAECBenchSubsystem::StartAction(int32 CharacterIndex)
 
 void UAECBenchSubsystem::StopAction(int32 CharacterIndex)
 {
-	FCharacterState& State = States[CharacterIndex];
-	FAction& Action = Actions[State.CurrentAction];
-	Action.StopGameTime = GetWorld()->GetTimeSeconds();
-
-	AAECDemoCharacter* Character = Characters[CharacterIndex].Get();
-	if (UAnimInstance* AnimInstance = IsValid(Character) ? Character->GetMesh()->GetAnimInstance() : nullptr)
+	const int32 ActionIndex = States[CharacterIndex].CurrentAction;
+	InterruptAction(CharacterIndex, ActionIndex);
+	if (bNetworked && IsValid(Characters[CharacterIndex]))
 	{
-		AnimInstance->Montage_Stop(AECBench::StopBlendOutSeconds, Montages[Action.Montage]);
+		Characters[CharacterIndex]->MulticastStopAction(Actions[ActionIndex].Id);
 	}
+}
 
-	// The timer path does what a hand-written implementation would: cancel what is pending, close what is open.
-	ClearTimers(State);
+void UAECBenchSubsystem::StartTimerPath(int32 CharacterIndex, int32 ActionIndex)
+{
+	FCharacterState& State = States[CharacterIndex];
+	const FAction& Action = Actions[ActionIndex];
 	const TArray<FKey>& Keys = MontageInfos[Action.Montage].Keys;
+
+	ClearTimers(State);
+	FTimerManager& Timers = GetWorld()->GetTimerManager();
+	State.Timers.SetNum(Keys.Num());
+	State.TimerWindowOpen.Init(false, Keys.Num());
+	for (int32 Key = 0; Key < Keys.Num(); ++Key)
+	{
+		const float Delay = Keys[Key].Position / Action.PlayRate;
+		Timers.SetTimer(State.Timers[Key], FTimerDelegate::CreateUObject(this, &UAECBenchSubsystem::HandleTimerKey, CharacterIndex, ActionIndex, Key),
+			FMath::Max(Delay, UE_KINDA_SMALL_NUMBER), false);
+	}
+}
+
+void UAECBenchSubsystem::StopTimerPath(int32 CharacterIndex, int32 ActionIndex)
+{
+	FCharacterState& State = States[CharacterIndex];
+	ClearTimers(State);
+	const TArray<FKey>& Keys = MontageInfos[Actions[ActionIndex].Montage].Keys;
 	for (int32 Key = 0; Key < Keys.Num(); ++Key)
 	{
 		if (State.TimerWindowOpen[Key])
 		{
 			State.TimerWindowOpen[Key] = false;
-			RecordFire(State.CurrentAction, Keys[Key].PairKey, EPath::Timer);
+			RecordFire(ActionIndex, Keys[Key].PairKey, EPath::Timer);
+		}
+	}
+}
+
+void UAECBenchSubsystem::RegisterReplicatedCharacter(AAECDemoCharacter& Character)
+{
+	const int32 Index = Character.GetBenchIndex();
+	if (Phase != ERunPhase::Recording || Index < 0)
+	{
+		return;
+	}
+	if (Index >= Characters.Num())
+	{
+		Characters.SetNum(Index + 1);
+		States.SetNum(Index + 1);
+	}
+	Characters[Index] = &Character;
+	States[Index].Band = AECBench::BandOf(Index, Character.IsPlayerCharacter());
+}
+
+void UAECBenchSubsystem::HandleServerStart(AAECDemoCharacter& Character, int32 ActionId, uint8 MontageIndex, float PlayRate)
+{
+	const int32 Index = Character.GetBenchIndex();
+	if (Phase != ERunPhase::Recording || !Characters.IsValidIndex(Index) || Characters[Index] != &Character || !MontageInfos.IsValidIndex(MontageIndex))
+	{
+		return;
+	}
+
+	// The role is read when the action starts: by then a player's character has been possessed for the whole warm-up.
+	const ERole Role = (Character.GetLocalRole() == ROLE_AutonomousProxy) ? ERole::AutonomousProxy : ERole::SimulatedProxy;
+	const int32 ActionIndex = BeginAction(Index, ActionId, MontageIndex, PlayRate, Role);
+
+	// Fires that arrived before this start (a G montage can reach a simulated proxy before the start message) belong here,
+	// with the times they really fired at.
+	for (const FHeldFire& Held : States[Index].HeldFires)
+	{
+		const int32 Key = FindKey(MontageIndex, Held.Animation, Held.Name, Held.Phase);
+		if (Key == INDEX_NONE)
+		{
+			++UnattributedFires;
+			continue;
+		}
+		RecordFire(ActionIndex, Key, EPath::Animation, Held.GameTime, Held.WallTime, Held.Frame);
+	}
+	States[Index].HeldFires.Reset();
+}
+
+void UAECBenchSubsystem::HandleServerStop(AAECDemoCharacter& Character, int32 ActionId)
+{
+	const int32 Index = Character.GetBenchIndex();
+	const int32 ActionIndex = States.IsValidIndex(Index) ? States[Index].CurrentAction : INDEX_NONE;
+	if (Phase != ERunPhase::Recording || !Actions.IsValidIndex(ActionIndex) || Actions[ActionIndex].Id != ActionId)
+	{
+		return;   // a stop for an action whose start this client never saw
+	}
+	InterruptAction(Index, ActionIndex);
+}
+
+void UAECBenchSubsystem::FinishClientRun()
+{
+	if (Phase != ERunPhase::Recording)
+	{
+		return;
+	}
+	for (const FCharacterState& State : States)
+	{
+		UnattributedFires += State.HeldFires.Num();   // no start ever came for them
+	}
+	if (!WriteRunFiles())
+	{
+		ExitCode = AECBench::WriteFailedExitCode;
+	}
+	Phase = ERunPhase::Done;
+}
+
+void UAECBenchSubsystem::NotifyClientsFinished() const
+{
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		AAECDemoPlayerController* Player = Cast<AAECDemoPlayerController>(It->Get());
+		if (Player && !Player->IsLocalController())
+		{
+			Player->ClientBenchFinished();
 		}
 	}
 }
@@ -457,17 +717,49 @@ void UAECBenchSubsystem::HandleMarkerFiredByAnimation(const USkeletalMeshCompone
 	}
 
 	// Attributed to the character's current (or just finished) action, and only if it is that action's montage.
-	const int32 ActionIndex = States[Character->GetBenchIndex()].CurrentAction;
-	const int32 MontageIndex = Actions.IsValidIndex(ActionIndex) ? Actions[ActionIndex].Montage : INDEX_NONE;
-	const int32 Key = (MontageIndex != INDEX_NONE && Animation == Montages[MontageIndex].Get())
-		? MontageInfos[MontageIndex].Keys.IndexOfByPredicate([EventName, EventPhase](const FKey& Candidate) { return Candidate.Name == EventName && Candidate.Phase == EventPhase; })
-		: INDEX_NONE;
+	FCharacterState& State = States[Character->GetBenchIndex()];
+	const int32 ActionIndex = State.CurrentAction;
+
+	// A G client learns of an action from its start message, but a simulated proxy's montage comes through GAS's own
+	// replicated property, which can arrive first. A fire after the current action is over belongs to the next action:
+	// it is held until that start arrives (HandleServerStart). NQ/NB clients start the montage on that message: no race.
+	if (Settings.bClient && bGas)
+	{
+		const double Now = GetWorld()->GetTimeSeconds();
+		if (!Actions.IsValidIndex(ActionIndex) || Now > LastFireTime(Actions[ActionIndex]))
+		{
+			State.HeldFires.Add({ Animation, EventName, EventPhase, Now, WallSeconds(), RunFrame() });
+			++FiresThisFrame;
+			return;
+		}
+	}
+
+	const int32 Key = Actions.IsValidIndex(ActionIndex) ? FindKey(Actions[ActionIndex].Montage, Animation, EventName, EventPhase) : INDEX_NONE;
 	if (Key == INDEX_NONE)
 	{
 		++UnattributedFires;
 		return;
 	}
 	RecordFire(ActionIndex, Key, EPath::Animation);
+}
+
+int32 UAECBenchSubsystem::FindKey(int32 MontageIndex, const UAnimSequenceBase* Animation, FName EventName, EAECEventPhase EventPhase) const
+{
+	if (!Montages.IsValidIndex(MontageIndex) || Animation != Montages[MontageIndex].Get())
+	{
+		return INDEX_NONE;
+	}
+	return MontageInfos[MontageIndex].Keys.IndexOfByPredicate([EventName, EventPhase](const FKey& Candidate)
+		{ return Candidate.Name == EventName && Candidate.Phase == EventPhase; });
+}
+
+double UAECBenchSubsystem::LastFireTime(const FAction& Action) const
+{
+	// The next action starts at least MinWaitSeconds after this one ended or was stopped, and its first key comes later
+	// still, so this grace can never take a fire away from the next action.
+	const double End = (Action.StopGameTime >= 0.0) ? Action.StopGameTime + AECBench::StopBlendOutSeconds
+		: Action.StartGameTime + MontageInfos[Action.Montage].Length / Action.PlayRate;
+	return End + AECBench::LateFireGraceSeconds;
 }
 
 void UAECBenchSubsystem::HandleTimerKey(int32 CharacterIndex, int32 ActionIndex, int32 KeyIndex)
@@ -491,14 +783,34 @@ void UAECBenchSubsystem::HandleTimerKey(int32 CharacterIndex, int32 ActionIndex,
 
 void UAECBenchSubsystem::RecordFire(int32 ActionIndex, int32 KeyIndex, EPath Path)
 {
+	RecordFire(ActionIndex, KeyIndex, Path, GetWorld()->GetTimeSeconds(), WallSeconds(), RunFrame());
+	++FiresThisFrame;
+}
+
+void UAECBenchSubsystem::RecordFire(int32 ActionIndex, int32 KeyIndex, EPath Path, double GameTime, double WallTime, uint64 Frame)
+{
 	FFire& Fire = Fires.AddDefaulted_GetRef();
 	Fire.Action = ActionIndex;
 	Fire.Key = KeyIndex;
 	Fire.Path = Path;
-	Fire.GameTime = GetWorld()->GetTimeSeconds();
-	Fire.WallTime = WallSeconds();
-	Fire.Frame = RunFrame();
-	++FiresThisFrame;
+	Fire.GameTime = GameTime;
+	Fire.WallTime = WallTime;
+	Fire.Frame = Frame;
+}
+
+void UAECBenchSubsystem::HandleNetworkFailure(UWorld* FailedWorld, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString)
+{
+	// Without this, a client whose server vanished would travel to the default map and never quit (S4).
+	if (FailedWorld != GetWorld() || Phase != ERunPhase::Recording)
+	{
+		return;
+	}
+	UE_LOG(LogAECBench, Error, TEXT("Lost the server before the run ended (%s: %s); no files written."), ENetworkFailure::ToString(FailureType), *ErrorString);
+	Phase = ERunPhase::Done;
+	if (Settings.bExitWhenDone)
+	{
+		FPlatformMisc::RequestExitWithStatus(false, AECBench::LostServerExitCode, TEXT("UAECBenchSubsystem"));
+	}
 }
 
 void UAECBenchSubsystem::Tick(float DeltaTime)
@@ -516,7 +828,7 @@ void UAECBenchSubsystem::Tick(float DeltaTime)
 	if (Phase == ERunPhase::Done)
 	{
 		++FramesSinceDone;
-		if (Settings.bExitWhenDone && FramesSinceDone >= AECBench::ExitDelayFrames)
+		if (Settings.bExitWhenDone && FramesSinceDone >= AECBench::ExitDelayFrames && Now >= ExitNotBefore)
 		{
 			Settings.bExitWhenDone = false; // request once
 			FPlatformMisc::RequestExitWithStatus(false, ExitCode, TEXT("UAECBenchSubsystem"));
@@ -524,14 +836,47 @@ void UAECBenchSubsystem::Tick(float DeltaTime)
 		return;
 	}
 
-	// Re-applied every frame: anything that changes the view target would otherwise move the bands on screen.
+	if (bNetworked)
+	{
+		FrameStamps.Add({ RunFrame(), Now, FrameStartWallSeconds() });
+	}
+
+	// Re-applied every frame: anything that changes the view target would otherwise move the bands on screen. Only a
+	// local player's view (a dedicated server's player controllers all belong to remote clients).
 	APlayerController* PlayerController = World->GetFirstPlayerController();
-	if (Camera && PlayerController && PlayerController->GetViewTarget() != Camera)
+	if (Camera && PlayerController && PlayerController->IsLocalController() && PlayerController->GetViewTarget() != Camera)
 	{
 		PlayerController->SetViewTarget(Camera);
 	}
 
-	if (Phase == ERunPhase::WarmUp && Now - BeginPlayTime >= Settings.WarmupSeconds)
+	if (Phase != ERunPhase::Recording)   // a client only records: its actions come from the server's messages
+	{
+		TickDirector(Now);
+	}
+
+	CSV_CUSTOM_STAT(AECBench, Fires, FiresThisFrame, ECsvCustomStatOp::Set);
+	FiresThisFrame = 0;
+}
+
+void UAECBenchSubsystem::TickDirector(double Now)
+{
+	if (Phase == ERunPhase::WaitingForPlayers)
+	{
+		if (RemotePlayers >= Settings.Players)
+		{
+			UE_LOG(LogAECBench, Display, TEXT("All %d remote player(s) joined at %.3f s; warm-up"), RemotePlayers, Now);
+			BeginWarmUp(Now);
+		}
+		else if (Now - BeginPlayTime > AECBench::PlayerWaitSeconds)
+		{
+			UE_LOG(LogAECBench, Error, TEXT("Only %d of %d remote player(s) joined within %.0f s."), RemotePlayers, Settings.Players, AECBench::PlayerWaitSeconds);
+			ExitCode = AECBench::SetupFailedExitCode;
+			Phase = ERunPhase::Done;
+		}
+		return;
+	}
+
+	if (Phase == ERunPhase::WarmUp && Now - WarmupStartTime >= Settings.WarmupSeconds)
 	{
 		BenchStartTime = Now;
 		CaptureEndTime = Now + Settings.CaptureSeconds;
@@ -592,11 +937,13 @@ void UAECBenchSubsystem::Tick(float DeltaTime)
 				ExitCode = AECBench::WriteFailedExitCode;
 			}
 			Phase = ERunPhase::Done;
+			if (bNetworked)
+			{
+				NotifyClientsFinished();
+				ExitNotBefore = Now + AECBench::ServerExitDelaySeconds;
+			}
 		}
 	}
-
-	CSV_CUSTOM_STAT(AECBench, Fires, FiresThisFrame, ECsvCustomStatOp::Set);
-	FiresThisFrame = 0;
 }
 
 uint32 UAECBenchSubsystem::HashFires() const
@@ -622,21 +969,34 @@ uint32 UAECBenchSubsystem::HashFires() const
 
 bool UAECBenchSubsystem::WriteRunFiles() const
 {
+	auto RoleName = [](ERole Role) -> const TCHAR*
+	{
+		switch (Role)
+		{
+		case ERole::RemotePlayer:    return TEXT("remote");
+		case ERole::SimulatedProxy:  return TEXT("sim");
+		case ERole::AutonomousProxy: return TEXT("auto");
+		default:                     return TEXT("npc");
+		}
+	};
+
 	const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("AECRuns"));
 	const uint32 Hash = HashFires();
 	const FString Header = FString::Printf(
-		TEXT("# run=%s config=%s cond=%s start=%s chars=%d seed=%d warmup=%.3f capture=%.3f benchstart=%.6f captureend=%.6f fixedstep=%s unattributed=%d hash=0x%08X\n"),
+		TEXT("# run=%s config=%s cond=%s start=%s chars=%d seed=%d warmup=%.3f capture=%.3f benchstart=%.6f captureend=%.6f fixedstep=%s net=%s players=%d unattributed=%d hash=0x%08X\n"),
 		*Settings.RunTag, *Settings.Config, *Settings.Condition, AECBench::StartOrderName(Settings.bStartPre), Characters.Num(), Settings.Seed,
-		Settings.WarmupSeconds, Settings.CaptureSeconds, BenchStartTime, CaptureEndTime, *AECBench::FixedStepText(), UnattributedFires, Hash);
+		Settings.WarmupSeconds, Settings.CaptureSeconds, BenchStartTime, CaptureEndTime, *AECBench::FixedStepText(), NetModeName(), RemotePlayers,
+		UnattributedFires, Hash);
 
-	FString ActionsCsv = Header + TEXT("action,char,band,montage,rate,start_game,start_wall,start_frame,stop_game,in_capture\n");
+	// Every "action" column holds the server's action id, so a client's files join the server's on it.
+	FString ActionsCsv = Header + TEXT("action,char,band,montage,rate,start_game,start_wall,start_frame,stop_game,in_capture,role\n");
 	FString ExpectedCsv = Header + TEXT("action,key,name,phase,position,due_game,interrupted\n");
-	for (int32 ActionIndex = 0; ActionIndex < Actions.Num(); ++ActionIndex)
+	for (const FAction& Action : Actions)
 	{
-		const FAction& Action = Actions[ActionIndex];
 		const FMontageInfo& Info = MontageInfos[Action.Montage];
-		ActionsCsv += FString::Printf(TEXT("%d,%d,%d,%s,%.3f,%.6f,%.6f,%llu,%.6f,%d\n"), ActionIndex, Action.Character, States[Action.Character].Band,
-			*Info.Name, Action.PlayRate, Action.StartGameTime, Action.StartWallTime, Action.StartFrame, Action.StopGameTime, Action.bInCapture ? 1 : 0);
+		ActionsCsv += FString::Printf(TEXT("%d,%d,%d,%s,%.3f,%.6f,%.6f,%llu,%.6f,%d,%s\n"), Action.Id, Action.Character, States[Action.Character].Band,
+			*Info.Name, Action.PlayRate, Action.StartGameTime, Action.StartWallTime, Action.StartFrame, Action.StopGameTime, Action.bInCapture ? 1 : 0,
+			RoleName(Action.Role));
 
 		// Expected = every key the action reached, due at start + position / play rate. An interrupted action expects
 		// nothing after its stop, except the end of a window that was open: that closes at the stop.
@@ -660,7 +1020,7 @@ bool UAECBenchSubsystem::WriteRunFiles() const
 			}
 			if (Due >= 0.0)
 			{
-				ExpectedCsv += FString::Printf(TEXT("%d,%d,%s,%s,%.6f,%.6f,%d\n"), ActionIndex, Key, *K.Name.ToString(), AECBench::PhaseName(K.Phase),
+				ExpectedCsv += FString::Printf(TEXT("%d,%d,%s,%s,%.6f,%.6f,%d\n"), Action.Id, Key, *K.Name.ToString(), AECBench::PhaseName(K.Phase),
 					K.Position, Due, bInterrupted ? 1 : 0);
 			}
 		}
@@ -669,15 +1029,33 @@ bool UAECBenchSubsystem::WriteRunFiles() const
 	FString EventsCsv = Header + TEXT("action,key,name,phase,path,game,wall,frame\n");
 	for (const FFire& Fire : Fires)
 	{
-		const FKey& K = MontageInfos[Actions[Fire.Action].Montage].Keys[Fire.Key];
-		EventsCsv += FString::Printf(TEXT("%d,%d,%s,%s,%s,%.6f,%.6f,%llu\n"), Fire.Action, Fire.Key, *K.Name.ToString(), AECBench::PhaseName(K.Phase),
+		const FAction& Action = Actions[Fire.Action];
+		const FKey& K = MontageInfos[Action.Montage].Keys[Fire.Key];
+		EventsCsv += FString::Printf(TEXT("%d,%d,%s,%s,%s,%.6f,%.6f,%llu\n"), Action.Id, Fire.Key, *K.Name.ToString(), AECBench::PhaseName(K.Phase),
 			Fire.Path == EPath::Timer ? TEXT("T") : *Settings.Config, Fire.GameTime, Fire.WallTime, Fire.Frame);
 	}
 
-	const bool bActionsWritten = FFileHelper::SaveStringToFile(ActionsCsv, *FPaths::Combine(Directory, Settings.RunTag + TEXT("_actions.csv")));
-	const bool bExpectedWritten = FFileHelper::SaveStringToFile(ExpectedCsv, *FPaths::Combine(Directory, Settings.RunTag + TEXT("_expected.csv")));
-	const bool bEventsWritten = FFileHelper::SaveStringToFile(EventsCsv, *FPaths::Combine(Directory, Settings.RunTag + TEXT("_events.csv")));
-	const bool bWritten = bActionsWritten && bExpectedWritten && bEventsWritten;
+	auto Save = [&Directory, this](const FString& Text, const TCHAR* Kind)
+	{
+		return FFileHelper::SaveStringToFile(Text, *FPaths::Combine(Directory, Settings.RunTag + Kind));
+	};
+	bool bWritten = Save(ActionsCsv, TEXT("_actions.csv"));
+	bWritten &= Save(EventsCsv, TEXT("_events.csv"));
+	if (!Settings.bClient)
+	{
+		bWritten &= Save(ExpectedCsv, TEXT("_expected.csv"));   // a client's expected events are the server's
+	}
+	if (bNetworked)
+	{
+		FString FramesCsv = Header + TEXT("frame,game,wall\n");
+		FramesCsv.Reserve(FramesCsv.Len() + FrameStamps.Num() * 40);   // one line is under 40 characters
+		for (const FFrameStamp& Stamp : FrameStamps)
+		{
+			FramesCsv.Appendf(TEXT("%llu,%.6f,%.6f\n"), Stamp.Frame, Stamp.GameTime, Stamp.WallTime);
+		}
+		bWritten &= Save(FramesCsv, TEXT("_frames.csv"));
+	}
+
 	UE_LOG(LogAECBench, Display, TEXT("Run files %s in %s: %d actions, %d fires, %d unattributed, fire hash 0x%08X"),
 		bWritten ? TEXT("written") : TEXT("NOT written"), *FPaths::ConvertRelativePathToFull(Directory), Actions.Num(), Fires.Num(), UnattributedFires, Hash);
 	if (!bWritten)

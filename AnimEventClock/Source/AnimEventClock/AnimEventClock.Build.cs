@@ -11,9 +11,11 @@ public class AnimEventClock : ModuleRules
 
 		// Each step adds the modules its code uses, no earlier.
 		// AnimEventClockCore is public: AECBenchSubsystem.h (a public header) uses its EAECEventPhase.
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "AnimEventClockCore" });
+		// GameplayAbilities is public: AECDemoGasCharacter.h and AECDemoAttackAbility.h (public headers) derive from its types (S4).
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "AnimEventClockCore", "GameplayAbilities" });
 
-		// AnimationBudgetAllocator is private: only .cpp files use USkeletalMeshComponentBudgeted (budget conditions).
-		PrivateDependencyModuleNames.AddRange(new string[] { "AnimationBudgetAllocator" });
+		// AnimationBudgetAllocator: only .cpp files use USkeletalMeshComponentBudgeted (budget conditions).
+		// GameplayTasks and GameplayTags: the .cpp files call into them through GAS (the montage task's activation, the event data).
+		PrivateDependencyModuleNames.AddRange(new string[] { "AnimationBudgetAllocator", "GameplayTasks", "GameplayTags" });
 	}
 }
