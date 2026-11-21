@@ -5,6 +5,7 @@
 #include "GameFramework/Character.h"
 #include "AECDemoCharacter.generated.h"
 
+class UAECEventClockComponent;
 class UAnimMontage;
 
 /**
@@ -39,6 +40,9 @@ public:
 	bool IsPlayerCharacter() const { return bPlayerCharacter; }
 	void SetPlayerCharacter(bool bInPlayerCharacter) { bPlayerCharacter = bInPlayerCharacter; }
 
+	/** The character's event clock (S6). Idle, and not ticking, unless a run plays actions through it. */
+	UAECEventClockComponent* GetClock() const { return Clock; }
+
 	/** Asks for the director's start to run in this actor's next tick (before the mesh's tick of that frame). */
 	void RequestStartInNextTick() { bStartRequested = true; }
 
@@ -64,6 +68,9 @@ public:
 	//~ End AActor
 
 private:
+	UPROPERTY(VisibleAnywhere, Category = "AEC")
+	TObjectPtr<UAECEventClockComponent> Clock;
+
 	UPROPERTY(Replicated)
 	int32 BenchIndex = INDEX_NONE;
 

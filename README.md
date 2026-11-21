@@ -4,10 +4,13 @@
 
 **Domain:** Animation–gameplay sync · multiplayer roles · **Difficulty:** ★★★★☆ · **Engine:** UE 5.8.4
 
-> **Status: in progress. There are no results yet.** Phases 1–4 are done: the problem analysis, the research verified in the 5.8.4 source, the final architecture, and an empty UE project and plugin that build with 0 warnings and run (packaged, and as a dedicated server). The success criteria are **targets fixed before any code exists, not results**. Every number will come from controlled before/after runs, each traceable to a raw benchmark batch. Sections marked *(pending)* are filled in only from real measurements, in the phase named.
+> **Status: core system built and measured on the authority; network half not built.** The event clock (`UAECEventClockComponent`) fires the events authored in a montage from the gameplay clock, and is measured against Queued notifies and timers in the same runs. Its replicated client side, clock sync and the editor validator (planned steps S7, S8) were **not built** (owner decision, 2026-11-21): the network numbers below are **baselines of the engine's paths only**. Every number comes from a named batch in [Benchmarks/](Benchmarks/README.md).
 
 | Phase | 1 Problem | 2 Research | 3 Architecture | 4 Foundation | 5 Implementation | 6 Explanation | 7 Testing | 8 Profiling | 9 Review | 10 Portfolio |
 |---|---|---|---|---|---|---|---|---|---|---|
+| State | ✓ | ✓ | ✓ final | ✓ | S1–S6 ✓ (S7, S8 dropped) | ✓ for S1–S6 | 13 tests | short batch only | — | this page |
+
+---|---|---|---|---|---|---|---|---|---|---|
 | State | ✓ | ✓ | ✓ final | ✓ | next (S1 of 8) | ongoing | — | — | — | — |
 
 ---
@@ -47,7 +50,21 @@ BranchingPoint notifies, `a.EnableQueuedAnimEventsOnServer` (and 5.8's new `a.No
 
 ## Before / after comparison
 
-*(pending, Phase 8)*. Configurations NQ (Queued), NB (BranchingPoint), T (timers), G (GAS) and AEC on the same seeded workload, across URO, budget and visibility conditions at 30 / 60 / 144 fps, and across server and client roles at 0 / 100 / 200 ms.
+Batch `2026-11-21_105804_final` ([summary](Benchmarks/Summaries/2026-11-21_105804_final_summary.md)): packaged Development, 64 NPCs, fixed step 60 fps, 20 s capture, 2 runs per condition after a priming run, pinned to the performance cores. The event clock (AEC) records **in the same runs** as the Queued notifies (NQ) and timers (T): same montages, same actions, same frames. Each run of a condition gave the same fire hash. Error = fire − due, in frames at 60 fps; 1,192 expected events per run.
+
+| Condition | Path | p99 error | Earliest / latest | Missed / duplicate | Gate (01 §6.4) |
+|---|---|---|---|---|---|
+| Engine defaults | NQ, instants and window begins | 1.00 frame | +0.03 / +1.00 | 0 / 0 | pass |
+| Engine defaults | NQ, window ends | 1.88 frames | +1.08 / +1.88 | 0 / 0 | **problem** |
+| Engine defaults | **AEC** | **1.00 frame** (ends 0.88) | +0.03 / +1.00 | **0 / 0** | pass |
+| URO at rate 4 | NQ, instants and window begins | 3.88 frames | **−2.88** / +3.88 | 0 / 0 | **problem** |
+| URO at rate 4 | NQ, window ends | 6.88 frames | +1.68 / +6.88 | 0 / 0 | **problem** |
+| URO at rate 4 | **AEC** | **1.00 frame** (ends 0.88) | +0.03 / +1.00 | **0 / 0** | pass |
+| either | T (timers) | 0.88 frame | 0.00 / +0.88 | 0 / 0 | pass |
+
+![Error distribution, NQ vs AEC](Media/chart_error_nq_vs_aec.png)
+
+**What it shows.** Under URO the notify path spreads events from 2.9 frames early to 6.9 frames late; the event clock's distribution does not move (identical under defaults and URO), never early, and at most one frame late, like a timer, while the events stay authored in the montage. Honest limits: the clock's latest event is **exactly one frame** late (16.67 ms), so SC1's strict "below one frame" holds for p99 but its maximum sits on the boundary; only two conditions were run with the clock (the full M1 matrix, the budget, look-ahead and visibility conditions, 30 and 144 fps were **not measured** with it); its per-event cost (SC5) and the animation's follow error (SC6) were **not measured**.
 
 ## Benchmark results
 
@@ -63,7 +80,7 @@ BranchingPoint notifies, `a.EnableQueuedAnimEventsOnServer` (and 5.8's new `a.No
 | `OnlyTickPoseWhenRendered` | **off-screen: nothing fires**; far, small meshes: 24% lost | the same | nothing lost | **problem** |
 | Start order (montage started before vs after the mesh's tick) | moves every event by up to one frame (early vs late) | the same | unaffected | a definition issue, not a failure |
 
-**What this means for the claims.** On the authority, a timer started with the action is already within one frame in every condition, so the single-process target for AnimEventClock (SC1) is **not** "more accurate than timers": it is timer-grade timing while the events stay authored in the montage, with play rate, sections and interruption handled in one place, and (S7) replicated. The notify failures above are what it will be measured against in Phase 8; nothing is claimed for it yet.
+**What this means for the claims.** On the authority, a timer started with the action is already within one frame in every condition, so the single-process target for AnimEventClock (SC1) is **not** "more accurate than timers": it is timer-grade timing while the events stay authored in the montage, with play rate, sections and interruption handled in one place, and (S7) replicated. The event clock's own numbers are in the before/after section above.
 
 **Network baselines (S4, M2):** dedicated server (30 Hz) and listen server, one client at 60 fps, 16 NPCs + 1 remote player, real time with 0 / 100 / 200 ms (+ jitter) added round trip, 2 runs per combination, 40 runs. Full tables: [09 S4](Explanation/09_Testing_And_Benchmarks.md).
 
@@ -74,11 +91,13 @@ BranchingPoint notifies, `a.EnableQueuedAnimEventsOnServer` (and 5.8's new `a.No
 | Server, URO / `OnlyTickPoseWhenRendered` | 3 frames early to 4 late / **every notify lost** | the same | ≤ 1 frame | **problem** |
 | Client (simulated proxies) | late by the one-way delay + up to 2 frames (p99 83 ms at 100 ms round trip, 149 ms at 200) | the same, plus **7–140 duplicate events per 1,000** at every latency | as late (started by the same message) | **problem** |
 
+![Client duplicates, NQ vs GAS](Media/chart_client_duplicates.png)
+
 Nothing was missed at defaults on any role. **UE-308913** (repeated notify-state begin/end on servers, reported in 5.6.1): **not reproduced on 5.8.4**, 0 repeats in about 5,000 server windows, including the remote player's (`09` S4-c).
 
 ## Recorded demonstration
 
-*(pending, Phase 10)*. The same NPCs with two hit-window bars each (notify path vs clock), under URO and on a client at 200 ms. Saved in `Media/`.
+Not recorded (owner decision: no video). The charts above are the evidence.
 
 ## Why studios care
 
@@ -101,9 +120,9 @@ The UE project is in [AnimEventClock/](AnimEventClock/) (UE 5.8.4, C++):
 | [01b_Research_Findings](Explanation/01b_Research_Findings.md) | Phase 2: verified engine behaviour (UE 5.8.4) and what it changed in the design |
 | [02_System_Architecture](Explanation/02_System_Architecture.md) | Final v1.0: modules, classes, the playhead, replication and clock sync, per-frame flows, safety rules, rejected alternatives |
 | [03_Implementation_Roadmap](Explanation/03_Implementation_Roadmap.md) | The small, ordered build steps; baselines captured before the event clock |
-| [04](Explanation/04_CPP_Fundamentals.md) · [05](Explanation/05_Line_By_Line_Code_Explanation.md) · [06](Explanation/06_Unreal_APIs_And_Macros.md) | Language fundamentals, line-by-line code, APIs and macros. Written step by step with the code (current to Phase 4) |
+| [04](Explanation/04_CPP_Fundamentals.md) · [05](Explanation/05_Line_By_Line_Code_Explanation.md) · [06](Explanation/06_Unreal_APIs_And_Macros.md) | Language fundamentals, line-by-line code, APIs and macros, written step by step with the code (current to S6) |
 | [09](Explanation/09_Testing_And_Benchmarks.md) | Every check and benchmark batch so far, with its job or batch name |
-| [07](Explanation/07_Common_Mistakes.md) · [08](Explanation/08_Debugging_And_Profiling.md) · [10](Explanation/10_Interview_Questions.md) · [11](Explanation/11_Optimization_Decisions.md) · [12](Explanation/12_Future_Scalability.md) | Common mistakes, debugging and profiling, interview questions, optimisation decisions, future scalability. Filled in during Phases 5–10 |
+| [07](Explanation/07_Common_Mistakes.md) · [08](Explanation/08_Debugging_And_Profiling.md) · [10](Explanation/10_Interview_Questions.md) · [11](Explanation/11_Optimization_Decisions.md) · [12](Explanation/12_Future_Scalability.md) | Common mistakes, debugging and profiling, interview questions, optimisation candidates, future scalability |
 | [Phase2_Raw_Notes/](Explanation/Phase2_Raw_Notes/README.md) | The Phase 2 audit trail, with every quote |
 | [Research/](Explanation/Research/) | The portfolio-wide research this project draws on: job market, technical challenges, existing solutions, local engine verification |
 

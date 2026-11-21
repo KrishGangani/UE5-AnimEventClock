@@ -82,3 +82,16 @@
 | A test body that uses a namespace's helpers without opening it | `error C3861: 'Describe': identifier not found` (the S5 first build) | `using namespace AECTimelineTests;` at the top of every test body that uses them, or qualify them | The compiler names the line |
 | Found by simplify: **two versions of "is this a loop back"** | A loop and a jump disagreed on zero-length sections | One `EnterSection` for every entry that is not a continuation | — |
 
+## S6: the event clock component
+
+| Mistake | How to spot it | How to prevent it | How to debug it |
+|---|---|---|---|
+| Rewriting the crossing buffer while handlers run | A handler's call advances the clock and refills the list being dispatched | Calls from a handler never advance (`CatchUp` returns the handled due time); `AdvanceTo` checks it is not inside a dispatch; re-check after every call (02 §8) | The `check` in `AdvanceTo` |
+| Closing windows from the end-of-frame playhead after a handler's stop | An interrupted end carries the pass of a loop crossed later in the same frame, not its begin's | Rewind the playhead to the handled crossing before the timeline's `Stop` (simplify finding) | — |
+| Applying a stop at "now" when it comes from a handler | Events later in the same frame still fire after a "cancel on hit" | From a handler, a stop takes effect at the due time of the event being handled | `aec.Debug 1` (not covered by the shipped test) |
+| Finishing the frame's crossings after a handler jumped | Keys of the section the jump left fire anyway, or the target section's keys come a frame late | A path serial: dispatch stops when it changes; the rest of the frame is advanced again on the new path | `aec.Debug 1` (not covered by the shipped test) |
+| Jumping from the playhead's end-of-frame state inside a handler | The windows the jump leaves close late (at the action's end) or not at all; a forward jump reports a new pass | Each crossing records where the playhead was; a handler's jump starts from there | `aec.Debug 1`: the pass of the target section's events (not covered by the shipped test) |
+| Sending a window end whose begin never went out | A handler sees an end without a begin (after a jump cut the frame, or with `aec.Enabled` toggled) | The component keeps its own open-window list; an end goes out only if its begin did | — |
+| Firing the last window ends while the action still counts as active | A handler that starts the next action from a window end re-enters the old action | Mark the action finished first, then send its closing ends | — |
+| Driving the montage from the clock in a comparison run | The NQ/NB path would play the montage twice | `bDriveMontage = false` when another path plays it | — |
+| A component that ticks when idle | Cost per character even without actions (SC5) | Tick only while an action is active | `ActiveActions` CSV stat vs characters |

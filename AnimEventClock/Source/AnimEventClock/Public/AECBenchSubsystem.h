@@ -3,6 +3,7 @@
 #pragma once
 
 #include "AECEventTypes.h"
+#include "AECEventClockComponent.h"
 #include "AECMontageTimeline.h"
 #include "Engine/TimerHandle.h"
 #include "Math/RandomStream.h"
@@ -60,6 +61,8 @@ class USkeletalMeshComponent;
  *   -AECStart=post|pre   where actions start: this Tick, after the meshes ticked (post, default), or the character's tick
  *                        before its mesh (pre: the montage then advances a whole frame on its first update; 01 H8)
  *   -AECPlayers=N        server: wait for N remote players before the warm-up starts (default 0)
+ *   -AECClock            also play every action through the character's event clock and record its events as path AEC
+ *                        (S6; the clock does not drive the montage here, so the animation paths are unchanged)
  *   -AECClient           this process is a network client that records (its world must be a client world). A client
  *                        uses -AECChars, -AECPlayers, -AECWarmup and -AECCapture only to size its buffers
  *   -AECRunTag=NAME      output file prefix (default "run"); files go to Saved/AECRuns/
@@ -114,7 +117,8 @@ private:
 	enum class EPath : uint8
 	{
 		Animation,
-		Timer
+		Timer,
+		Clock     // AEC: the character's event clock (S6)
 	};
 
 	enum class ERunPhase : uint8
@@ -149,6 +153,7 @@ private:
 		bool bStartPre = false;
 		int32 Players = 0;
 		bool bClient = false;
+		bool bClock = false;
 		FString RunTag = TEXT("run");
 		bool bExitWhenDone = false;
 	};
@@ -177,6 +182,7 @@ private:
 		uint64 StartFrame = 0;
 		double StopGameTime = -1.0;      // < 0: not interrupted
 		bool bInCapture = false;         // always false on a client (the server's file says)
+		int32 ClockActionId = INDEX_NONE;   // the character's event clock's id for this action (-AECClock)
 	};
 
 	/** One reported event. */
@@ -233,6 +239,12 @@ private:
 
 	/** The wall-clock moment this frame's game time stands for: the engine's frame start time, on WallSeconds()'s base. */
 	static double FrameStartWallSeconds();
+
+	/** This process plays the run's actions through the characters' event clocks (-AECClock on the authority). */
+	bool PlaysClock() const { return Settings.bClock && !Settings.bClient; }
+
+	/** A path's name in the events file: NQ / NB / G, T or AEC. */
+	const TCHAR* PathName(EPath Path) const;
 
 	/** "standalone", "listen", "dedicated" or "client" (the file header's net= value). */
 	const TCHAR* NetModeName() const;
@@ -296,6 +308,10 @@ private:
 
 	/** The markers' comparison hook: the animation path. */
 	void HandleMarkerFiredByAnimation(const USkeletalMeshComponent* MeshComp, const UAnimSequenceBase* Animation, FName EventName, EAECEventPhase EventPhase);
+
+	/** The clock path (AEC): one event of a character's event clock. */
+	UFUNCTION()
+	void HandleClockEvent(const FAECEventInfo& Event);
 
 	/** A timer-path key came due. */
 	void HandleTimerKey(int32 CharacterIndex, int32 ActionIndex, int32 KeyIndex);

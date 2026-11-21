@@ -196,7 +196,9 @@ def analyse(prefix: str) -> dict:
     """All metrics of one single-process run, per path and per (path, bucket)."""
     header, in_capture, due, interrupted, phase_of, events = load_run(prefix)
     fires = load_fires(events, in_capture)
-    paths = {header["config"], "T"} if "config" in header else ()
+    paths = set()
+    if "config" in header:
+        paths = {header["config"], "T"} | ({"AEC"} if header.get("clock") == "1" else set())   # AEC: a run with -AECClock
     return {"run": header, "expected": len(due) - len(interrupted), "interrupted_ends": len(interrupted),
             "actions_in_capture": len(in_capture),
             "paths": measure(due, interrupted, lambda action, key: in_capture[action]["band"], phase_of, fires, paths, frame_ms_of(header))}

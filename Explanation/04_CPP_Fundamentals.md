@@ -208,3 +208,27 @@ NewIndexOf[Order[NewIndex]] = NewIndex;   // then every PairKey is rewritten thr
 - Sorting moves elements, so any index that pointed into the array (a window's begin pointing at its end) must be translated. Sorting a list of indices first gives that translation for free. `StableSort` keeps equal positions in insertion order, so a window's begin always stays before its end.
 - **In our code:** `FAECMontageTimeline::Finalize`.
 
+## Added in step S6
+
+## 22. A scope object that undoes what it did (RAII)
+
+```cpp
+struct FDispatchScope
+{
+	explicit FDispatchScope(bool& bInDispatching) : bDispatching(bInDispatching), bOutermost(!bInDispatching) { bDispatching = true; }
+	~FDispatchScope() { if (bOutermost) { bDispatching = false; } }
+	bool& bDispatching;   // a reference member: it changes the component's own flag
+	const bool bOutermost;
+};
+const FDispatchScope Scope(bDispatching);   // set here; reset when the function returns, on every path
+```
+- The constructor does something and the destructor undoes it, so no early `return` or `break` can forget the reset ("resource acquisition is initialisation"). A reference member must be bound in the constructor's initialiser list and can never point elsewhere.
+- **In our code:** the event clock's dispatch flag and its cycle count (`AECEventClockComponent.cpp`).
+
+## 23. Re-entrancy: code that calls code that calls you back
+
+```cpp
+for (const FAECCrossing& Crossing : ToFire) { Broadcast(...); if (PathSerial != Path || !bActive) break; }
+```
+- A delegate call runs other people's code, which may call back into this object (stop it, start something new, destroy its owner) while the loop is still running. After every call the loop re-checks the state it depends on; a serial number that changes on every new path tells it the rest of its list is stale. The list itself must not change under the loop: here the only code that writes it can never run during a dispatch, and a `check` says so.
+- **In our code:** `UAECEventClockComponent::Dispatch` and `FinishAction` (02 §8).

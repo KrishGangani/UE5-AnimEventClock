@@ -125,6 +125,7 @@ UAECBenchSubsystem::FRunSettings UAECBenchSubsystem::ReadRunSettings()
 	}
 	FParse::Value(CommandLine, TEXT("AECPlayers="), Read.Players);
 	Read.bClient = FParse::Param(CommandLine, TEXT("AECClient"));
+	Read.bClock = FParse::Param(CommandLine, TEXT("AECClock"));
 	FParse::Value(CommandLine, TEXT("AECRunTag="), Read.RunTag);
 	Read.bExitWhenDone = FParse::Param(CommandLine, TEXT("AECExit"));
 	return Read;
@@ -377,6 +378,11 @@ AAECDemoCharacter* UAECBenchSubsystem::SpawnCharacter(UWorld& World, const FTran
 	{
 		CastChecked<USkeletalMeshComponentBudgeted>(Mesh)->SetAutoRegisterWithBudgetAllocator(true);
 	}
+	if (Settings.bClock)
+	{
+		Character->GetClock()->bDriveMontage = false;   // the NQ/NB path plays the montage; the clock only fires events
+		Character->GetClock()->OnClockEvent.AddDynamic(this, &UAECBenchSubsystem::HandleClockEvent);
+	}
 	Character->FinishSpawning(Transform);
 
 	if (bRootMotionFromEverything)
@@ -511,9 +517,15 @@ int32 UAECBenchSubsystem::BeginAction(int32 CharacterIndex, int32 Id, int32 Mont
 	Action.StartWallTime = WallSeconds();
 	Action.StartFrame = RunFrame();
 	Action.bInCapture = (Phase == ERunPhase::Capture);
-	States[CharacterIndex].CurrentAction = ActionIndex;
 
 	AAECDemoCharacter* Character = Characters[CharacterIndex].Get();
+	if (PlaysClock() && IsValid(Character))
+	{
+		// Before the current action changes: a clock action still running (after a hitch) ends inside this call, and its
+		// last events are still attributed to it.
+		Action.ClockActionId = Character->GetClock()->PlayAction(Montages[MontageIndex], PlayRate);
+	}
+	States[CharacterIndex].CurrentAction = ActionIndex;
 	if (!IsValid(Character) || !Character->PlayActionMontage(*Montages[MontageIndex], PlayRate))
 	{
 		UE_LOG(LogAECBench, Error, TEXT("Action %d: the montage did not start on character %d."), Id, CharacterIndex);
@@ -529,6 +541,10 @@ void UAECBenchSubsystem::InterruptAction(int32 CharacterIndex, int32 ActionIndex
 	if (AAECDemoCharacter* Character = Characters[CharacterIndex].Get(); IsValid(Character))
 	{
 		Character->StopActionMontage(*Montages[Action.Montage], AECBench::StopBlendOutSeconds);
+		if (PlaysClock())
+		{
+			Character->GetClock()->StopAction();   // closes an open window at the stop, as the expected events say
+		}
 	}
 	StopTimerPath(CharacterIndex, ActionIndex);
 }
@@ -737,6 +753,22 @@ double UAECBenchSubsystem::LastFireTime(const FAction& Action) const
 	return End + AECBench::LateFireGraceSeconds;
 }
 
+void UAECBenchSubsystem::HandleClockEvent(const FAECEventInfo& Event)
+{
+	// The clock's keys are the director's keys (both from FAECMontageTimeline::Build), so its key index is the director's.
+	// Attributed by the clock's own action id, not by timing: an event of an earlier action is never counted for a later one.
+	const AAECDemoCharacter* Character = Cast<AAECDemoCharacter>(Event.Owner);
+	const int32 Index = Character ? Character->GetBenchIndex() : INDEX_NONE;
+	const int32 ActionIndex = States.IsValidIndex(Index) ? States[Index].CurrentAction : INDEX_NONE;
+	if (!Actions.IsValidIndex(ActionIndex) || Actions[ActionIndex].ClockActionId != Event.ActionId
+		|| !MontageInfos[Actions[ActionIndex].Montage].Keys.IsValidIndex(Event.KeyIndex))
+	{
+		++UnattributedFires;
+		return;
+	}
+	RecordFire(ActionIndex, Event.KeyIndex, EPath::Clock);
+}
+
 void UAECBenchSubsystem::HandleTimerKey(int32 CharacterIndex, int32 ActionIndex, int32 KeyIndex)
 {
 	FCharacterState& State = States[CharacterIndex];
@@ -921,6 +953,16 @@ void UAECBenchSubsystem::TickDirector(double Now)
 	}
 }
 
+const TCHAR* UAECBenchSubsystem::PathName(EPath Path) const
+{
+	switch (Path)
+	{
+	case EPath::Timer: return TEXT("T");
+	case EPath::Clock: return TEXT("AEC");
+	default:           return *Settings.Config;   // the animation path: NQ, NB or G
+	}
+}
+
 uint32 UAECBenchSubsystem::HashFires() const
 {
 	// Sorted first: inside one frame, the order in which meshes dispatch their queued notifies depends on which parallel
@@ -958,9 +1000,9 @@ bool UAECBenchSubsystem::WriteRunFiles() const
 	const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("AECRuns"));
 	const uint32 Hash = HashFires();
 	const FString Header = FString::Printf(
-		TEXT("# run=%s config=%s cond=%s start=%s chars=%d seed=%d warmup=%.3f capture=%.3f benchstart=%.6f captureend=%.6f fixedstep=%s net=%s players=%d unattributed=%d hash=0x%08X\n"),
+		TEXT("# run=%s config=%s cond=%s start=%s chars=%d seed=%d warmup=%.3f capture=%.3f benchstart=%.6f captureend=%.6f fixedstep=%s net=%s players=%d clock=%d unattributed=%d hash=0x%08X\n"),
 		*Settings.RunTag, *Settings.Config, *Settings.Condition, AECBench::StartOrderName(Settings.bStartPre), Characters.Num(), Settings.Seed,
-		Settings.WarmupSeconds, Settings.CaptureSeconds, BenchStartTime, CaptureEndTime, *AECBench::FixedStepText(), NetModeName(), RemotePlayers,
+		Settings.WarmupSeconds, Settings.CaptureSeconds, BenchStartTime, CaptureEndTime, *AECBench::FixedStepText(), NetModeName(), RemotePlayers, Settings.bClock ? 1 : 0,
 		UnattributedFires, Hash);
 
 	// Every "action" column holds the server's action id, so a client's files join the server's on it.
@@ -1007,7 +1049,7 @@ bool UAECBenchSubsystem::WriteRunFiles() const
 		const FAction& Action = Actions[Fire.Action];
 		const FKey& K = MontageInfos[Action.Montage].Keys[Fire.Key];
 		EventsCsv += FString::Printf(TEXT("%d,%d,%s,%s,%s,%.6f,%.6f,%llu\n"), Action.Id, Fire.Key, *K.Name.ToString(), AECBench::PhaseName(K.Phase),
-			Fire.Path == EPath::Timer ? TEXT("T") : *Settings.Config, Fire.GameTime, Fire.WallTime, Fire.Frame);
+			PathName(Fire.Path), Fire.GameTime, Fire.WallTime, Fire.Frame);
 	}
 
 	auto Save = [&Directory, this](const FString& Text, const TCHAR* Kind)

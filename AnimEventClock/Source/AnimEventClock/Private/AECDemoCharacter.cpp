@@ -3,6 +3,7 @@
 #include "AECDemoCharacter.h"
 
 #include "AECBenchSubsystem.h"
+#include "AECEventClockComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
@@ -50,6 +51,8 @@ AAECDemoCharacter::AAECDemoCharacter(const FObjectInitializer& ObjectInitializer
 
 	// The director turns this on before BeginPlay only for budget conditions (01b #5).
 	CastChecked<USkeletalMeshComponentBudgeted>(MeshComponent)->SetAutoRegisterWithBudgetAllocator(false);
+
+	Clock = CreateDefaultSubobject<UAECEventClockComponent>(TEXT("EventClock"));
 }
 
 void AAECDemoCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

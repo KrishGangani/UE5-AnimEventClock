@@ -184,7 +184,7 @@ def launch(name: str, config: str, cond: str, fps: int, args) -> tuple[str, int 
     """Starts one run and waits for it. Returns (command, exit code or None on timeout, start time, wall seconds)."""
     command = (f'"{EXE}" -windowed -ResX=1280 -ResY=720 -nosound -unattended -traceautostart=0 -deterministic -FPS={fps} -novsync '
                f"-AECChars={args.chars} -AECSeed={args.seed} -AECWarmup={args.warmup} -AECCapture={args.capture} "
-               f"-AECConfig={config} -AECCond={cond} -AECStart={args.start} -AECRunTag={name} -AECExit")
+               f"-AECConfig={config} -AECCond={cond} -AECStart={args.start} -AECRunTag={name} -AECExit" + (" -AECClock" if args.clock else ""))
     if args.dry_run:
         print("DRY:", command)
         return command, 0, time.time(), 0.0
@@ -304,6 +304,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--capture", type=float, default=60.0)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--start", choices=("post", "pre"), default="post")
+    parser.add_argument("--clock", action="store_true", help="also record the event clock's path (AEC, S6)")
     parser.add_argument("--cooldown", type=float, default=2.0)
     parser.add_argument("--label", default="")
     parser.add_argument("--no-prime", action="store_true")
@@ -332,7 +333,8 @@ def main(argv: list[str]) -> int:
 
     batch = batch_name(args.label)
     environment = environment_record() if not args.dry_run else {}
-    environment.update({"chars": args.chars, "seed": args.seed, "warmup": args.warmup, "capture": args.capture, "start": args.start})
+    environment.update({"chars": args.chars, "seed": args.seed, "warmup": args.warmup, "capture": args.capture, "start": args.start,
+                        "clock": args.clock})
     records: list[dict] = []
 
     def run(config: str, cond: str, fps: int, run_index: int, priming: bool = False) -> None:

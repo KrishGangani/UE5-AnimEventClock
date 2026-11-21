@@ -245,3 +245,27 @@ Queue job `20261121_082648_0f6dba` (build editor && game && `run_tests.bat AnimE
 - `simplify`, applied: `CloseOpenWindows` adds the forced ends directly (no copy of the list, no search); a dead arm of a ternary removed; one `Describe` helper in the tests; the open-window list on an inline allocator; **windows entered partway now begin at the entry** (the engine's rule for notify states, `AnimSequenceBase.cpp:478`; an altitude finding: a start, loop or jump into a window gave neither begin nor end); one `EnterSection` for every entry that is not a continuation; `Build` uses the montage's own section lookups; the director builds its keys with `FAECMontageTimeline::Build` and the build test joined the asset test file, sharing its tolerance and flags (reuse findings). Skipped on purpose: inlining `FirstKeyFrom` (its name documents the bound choice); one shared section layout for every test (each test reads on its own); the director keeping the whole timeline instead of its keys (the keys are all it needs).
 - **Three changes after that review**, found while drafting S6 and S7: a window still open at the montage's end now ends there (it would otherwise have been closed by the component at the frame's time, not the path's); every crossing records the playhead's section and position (a handler's jump starts from there, S6); forced ends come in key order, so every crossing of a path is ordered by (pass, position, key), which S7 compares against the server's cuts. A second `code-review` (medium) on these three found the empty-step guard and the no-section exit still finishing a path with windows open (fixed: every way a path ends closes its windows) and six test or comment gaps (fixed: the tests above assert the recorded state and the path order; header comments; the 05 wording). One pre-existing cost was left for Phase 8: each section entry scans the keys before it for spanning windows (11).
 
+## Step S6 · The event clock (authority) and the final job (2026-11-21)
+
+Queue job `20261121_105610_a0ed8e` (build editor && game && `run_tests.bat AnimEventClock` && package && `run_bench.py --configs NQ --clock --conds def,uro4 --fps 60 --runs 2 --capture 20 --label final`): **exit 0 in 186 s.** Owner direction for this last step: one job, no new campaigns, no further code review; S7 (replication, clock sync) and S8 (validator) were dropped. Earlier S6 jobs were cancelled before they ran.
+
+| # | Check | Result |
+|---|---|---|
+| S6-1 | Editor and game targets build, package | ✅ 0 errors, 0 warnings; cook "Success - 0 error(s), 0 warning(s)" |
+| S6-2 | Automation tests | ✅ **13 of 13**: the 12 of S5 and `AnimEventClock.Clock.DueTimesAndDestroyDuringDispatch` (every key once with its exact due time, never early, under one frame late at play rate 2; a handler that destroys the actor mid-dispatch stops dispatch, and later frames are safe). The other handler cases drafted for S6 (stop, jump, new action during dispatch) were cut to one test by the owner's limit and are **not tested** |
+| S6-3 | The event clock beside NQ in one batch | ✅ Batch `2026-11-21_105804_final` ([summary](../Benchmarks/Summaries/2026-11-21_105804_final_summary.md)): see the table below; both runs of each condition have the same hash |
+
+**Audit trail for S6.** `code-review` (medium) on the drafts, 6 findings, all fixed (a handler's jump started from the end-of-frame playhead and counted as a new pass; `PlayAction` after the owner was destroyed; `aec.Enabled` toggled mid-window; window state during closing ends; the bench's attribution after a hitch). `simplify` on the tree diff: applied (no copy of the crossings, `CatchUp`, the timeline's own `Stop` for closing ends from the rewound playhead, a cached mesh, one counters struct, the engine's test world, the bench's single clock call); skipped with reasons in `11`.
+
+## Success criteria: what was measured (01 §6.4)
+
+| # | Criterion | Result | Source |
+|---|---|---|---|
+| SC1 | AEC on time on the authority, [0, 1 frame), every condition | **Partly measured.** Defaults and URO rate 4 at 60 fps: p99 1.00 frame, never early (earliest +0.03), latest exactly 1.00 frame (on the bound, not below it), 0 missed, 0 duplicates, unchanged by URO. Other conditions, 30 / 144 fps, dedicated and listen servers: **not measured** | `final` batch |
+| SC2 | Exactly once on every role, 0–200 ms | Authority: 0 missed, 0 duplicates (2,384 events per condition). Clients: **not measured** (no replicated clock: S7 not built). Baselines: NQ 0 / 0 on clients; G 7–140 duplicates per 1,000 | `final`, `m2` |
+| SC3 | On time on clients | **Not measured** (S7 not built). Baselines: every path late by the one-way delay + up to 2 frames | `m2` |
+| SC4 | Clock sync within one server frame | **Not measured** (S7 not built) | — |
+| SC5 | Cost per event and per action | **Not measured** (the CSV stats exist, `08` §1; no overhead batch was run) | — |
+| SC6 | The animation still follows | **Not measured** (the bench drove the montage through NQ; the follower was not exercised) | — |
+| SC7 | Validator: 6 of 6 seeded defects, 0 false positives | **Not measured** (S8 not built; drafts parked outside the repository) | — |
+

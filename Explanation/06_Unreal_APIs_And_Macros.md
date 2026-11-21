@@ -45,6 +45,11 @@
 | 36 | Network emulation and process switches: `-PktLag`, `-PktLagVariance`, `-abslog`, `-ExecCmds`, `t.MaxFPS`, `-server` | S4 |
 | 37 | `UEngine::OnNetworkFailure` | S4 |
 | 38 | `Algo::LowerBoundBy` / `UpperBoundBy`; `FCompositeSection` | S5 |
+| 39 | `USTRUCT(BlueprintType)`, dynamic multicast delegates, `BlueprintAssignable` | S6 |
+| 40 | `TAutoConsoleVariable` | S6 |
+| 41 | Component tick on demand: `bStartWithTickEnabled`, `SetComponentTickEnabled` | S6 |
+| 42 | `FCoreDelegates::OnEndFrame`, CSV stats from a plugin | S6 |
+| 43 | A world inside an automation test: `FTestWorldWrapper` | S6 |
 
 ---
 
@@ -291,3 +296,22 @@ Paths in this section are relative to `Engine/Source/Runtime/Engine/` unless the
 
 1. Binary searches over a sorted range with a projection (`Core/Public/Algo/BinarySearch.h`): `LowerBoundBy` gives the first element whose projected value is not less than the value, `UpperBoundBy` the first one greater. `FCompositeSection` (`Classes/Animation/AnimMontage.h:36–60`) is a montage section: `SectionName`, `GetTime()` (its start, from `FAnimLinkableElement`, `Classes/Animation/AnimLinkableElement.h:77`) and `NextSectionName`; `UAnimMontage::GetSectionStartAndEndTime(Index, Start, End)` gives a section's start and the next array entry's start (or the play length) as its end, and `GetSectionIndex(Name)` the engine's index of a section (`AnimMontage.h:812, 819`; `Private/Animation/AnimMontage.cpp:305–317`). 2. Find the first key of a crossing range in O(log n); read the section path. 3. The projection can be a member pointer (`&FAECTimelineKey::Position`); the range must be sorted by it. The engine assumes `CompositeSections` is in time order (the montage editor keeps it so), and its section indices are what montage instances use, so the timeline takes them as they are. 4. Sorted keys. 5. Unsorted data. 6. Using the wrong bound: `LowerBound` includes a key exactly at the start, `UpperBound` excludes it, which is exactly the `[A, B]` vs `(A, B]` choice. 7. `Algo::UpperBoundBy(Keys, Position, &FAECTimelineKey::Position)` 8. `FAECMontageTimeline::FirstKeyFrom`; `Build` takes the sections exactly as the engine plays them.
 
+## 39. `USTRUCT(BlueprintType)`, dynamic multicast delegates, `BlueprintAssignable`
+
+1. A struct Blueprints can read (`UPROPERTY(BlueprintReadOnly)` fields), and `DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam`, a delegate that can be bound by name, from Blueprints (`UPROPERTY(BlueprintAssignable)`) or from C++ with `AddDynamic` to a `UFUNCTION`. 2. Gameplay code in either language reacts to clock events. 3. Dynamic delegates call through reflection (slower than native ones); `AddDynamic` needs a `UFUNCTION` with a matching signature. 4. Events meant for designers. 5. Hot inner loops with many listeners (a native delegate is cheaper: an option for Phase 8, `11`). 6. Binding a non-`UFUNCTION`; a handler that changes the delegate's owner while it broadcasts (the clock copies its crossings and re-checks after each call, 02 §8). 7. `Clock->OnClockEvent.AddDynamic(this, &UAECBenchSubsystem::HandleClockEvent);` 8. `FAECEventInfo`, `UAECEventClockComponent::OnClockEvent`; the bench and the tests bind it.
+
+## 40. `TAutoConsoleVariable`
+
+1. A console variable owned by a static object (`Core/Public/HAL/IConsoleManager.h`), read with `GetValueOnGameThread()`. 2. Switches that config, the command line or the console can set. 3. `ECVF_Default` priority: config and `-ini` overrides work. 4. Debug and A/B switches. 5. Per-object settings (use properties). 6. Reading it on another thread with the game-thread accessor. 7. `TAutoConsoleVariable<int32> CVarEnabled(TEXT("aec.Enabled"), 1, TEXT("…"), ECVF_Default);` 8. `aec.Enabled` (clock on / off for the overhead runs), `aec.Debug`.
+
+## 41. Component tick on demand: `bStartWithTickEnabled`, `SetComponentTickEnabled`
+
+1. `PrimaryComponentTick.bCanEverTick` registers a tick function; `bStartWithTickEnabled = false` keeps it off until `SetComponentTickEnabled(true)`. 2. A component that only works while something is active should cost nothing otherwise (SC5: per active action). 3. A disabled tick function is skipped by the tick task manager; `TickGroup` places it in the frame. 4. Work that comes and goes. 5. — 6. Forgetting to switch it off again (the clock does at every finish). 7. `SetComponentTickEnabled(bActive);` 8. `UAECEventClockComponent`: on in `PlayAction`, off in `FinishAction`.
+
+## 42. `FCoreDelegates::OnEndFrame`, CSV stats from a plugin
+
+1. A delegate broadcast once at the end of every frame (`Core/Public/Misc/CoreDelegates.h:283`); `CSV_DEFINE_CATEGORY` / `CSV_CUSTOM_STAT` write the CSV profiler's custom stats (as in the harness, `06` §25). 2. Publish counters once per frame instead of once per event. 3. Registered at module startup, removed at shutdown. 4. Per-frame aggregates. 5. Per-event detail (that is what the harness's CSV files are for). 6. Forgetting to reset the counters after publishing. 7. `FCoreDelegates::OnEndFrame.AddStatic(&AnimEventClock::Telemetry::PublishAndReset);` 8. `FAnimEventClockCoreModule`: `EventsFired`, `ActiveActions`, `VisualCorrections`, `DispatchUs`.
+
+## 43. A world inside an automation test: `FTestWorldWrapper`
+
+1. The engine's test-world helper (`Runtime/Engine/Public/Tests/AutomationCommon.h:30`): `CreateTestWorld(EWorldType::Game)` makes a world with a game instance and registers its context; `BeginPlayInTestWorld()` sets the default game mode and begins play; its destructor ends play and destroys the world (and restores `GFrameCounter`). `UWorld::TimeSeconds` is public (`Classes/Engine/World.h:2010`). 2. Test a component's real behaviour (registration, actors, destruction, `EndPlay`) without a level or PIE. 3. A `Game` world also creates the game's world subsystems (the bench director stays idle without its switches). 4. Component logic that needs an owner, a world and destruction. 5. Rendering or networking. 6. Writing the setup by hand (easy to forget `EndPlay` or a context: the first S6 draft did); ticking the whole world when only one component matters (the tests tick the clock directly, at chosen times). 7. `FTestWorldWrapper Wrapper; Wrapper.CreateTestWorld(EWorldType::Game); Wrapper.BeginPlayInTestWorld(); World->TimeSeconds = Start + 3.0; Clock->TickComponent(0.f, LEVELTICK_All, nullptr);` 8. `AECEventClockTests.cpp` (`FClockWorld`).
