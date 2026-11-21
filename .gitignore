@@ -29,3 +29,6 @@ Benchmarks/*_console.txt
 
 # Parked drafts and downloaded reference files (never committed; AGENT_BRIEF rule 11).
 _wip/
+
+# The portfolio export (images, video, description) for Google Drive; built from the committed results.
+Portfolio/
